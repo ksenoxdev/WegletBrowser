@@ -54,7 +54,9 @@ GURL WegletBrowserMainParts::StartupURL() {
     }
     LOG(ERROR) << "--url is not a valid address, opening a blank page instead";
   }
-  return GURL("about:blank");
+  // Our own new tab page rather than about:blank: it is the first thing
+  // the user sees, and it is now something rather than nothing.
+  return GURL("weglet://newtab/");
 }
 
 int WegletBrowserMainParts::PreMainMessageLoopRun() {

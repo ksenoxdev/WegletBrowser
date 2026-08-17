@@ -47,6 +47,8 @@ source_set("weglet_lib") {
     "browser/weglet_browser_main_parts.h",
     "browser/weglet_content_browser_client.cc",
     "browser/weglet_content_browser_client.h",
+    "browser/weglet_url_loader_factory.cc",
+    "browser/weglet_url_loader_factory.h",
     "browser/weglet_window.cc",
     "browser/weglet_window.h",
     "common/weglet_content_client.cc",
@@ -56,6 +58,10 @@ source_set("weglet_lib") {
   ]
 
   deps = [
+    # The interface: design tokens, TypeScript, and the pages embedded in
+    # the binary -- see ui/BUILD.gn.
+    "ui",
+
     # The browser's own logic: tabs, history, omnibox, profile, security.
     # Built by cargo, linked here -- see rust/BUILD.gn.
     "rust:weglet_ffi",
@@ -64,7 +70,10 @@ source_set("weglet_lib") {
     "//content/public/browser",
     "//content/public/common",
     "//content/public/renderer",
+    "//mojo/public/cpp/bindings",
     "//net",
+    "//services/network/public/cpp",
+    "//services/network/public/mojom",
     "//ui/base",
     "//ui/display",
     "//url",

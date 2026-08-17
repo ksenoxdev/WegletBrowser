@@ -1,0 +1,67 @@
+/* Copyright 2026 Weglet - Licensed under Apache 2.0
+ *
+ * Shared by every weglet:// page. Every value here comes from a token --
+ * see tokens.json. A literal colour or pixel count in this file is a bug.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: var(--font-size-md);
+  /* Weglet's own pages are not documents to be selected and copied; the
+     stray highlight when dragging a tile is just noise. */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* Never remove the focus ring without replacing it: it is the only thing
+   telling a keyboard user where they are. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Present to a screen reader, absent on screen. Used for headings that
+   label a region the eye can already see. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

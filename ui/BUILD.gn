@@ -1,0 +1,65 @@
+# Copyright 2026 Weglet - Licensed under Apache 2.0
+#
+# weglet/ui/BUILD.gn
+#
+# Tokens, TypeScript and the embedded pages. See build_ui.py.
+
+_gen_dir = "$target_gen_dir"
+_header = "$root_gen_dir/weglet/ui/generated_resources.h"
+_source = "$root_gen_dir/weglet/ui/generated_resources.cc"
+_tokens_header = "$_gen_dir/weglet_tokens.h"
+
+action("build_ui") {
+  script = "build_ui.py"
+
+  # Coarse on purpose: the depfile below is generated from the real inputs,
+  # so adding a page or a .ts file does not mean editing a list here.
+  inputs = [
+    "build_ui.py",
+    "generate_tokens.py",
+    "tokens.json",
+    "tsconfig.json",
+  ]
+
+  outputs = [
+    _header,
+    _source,
+    _tokens_header,
+  ]
+  depfile = "$_gen_dir/build_ui.d"
+
+  args = [
+    "--ui-dir",
+    rebase_path(".", root_build_dir),
+    "--chromium-root",
+    rebase_path("//", root_build_dir),
+    "--gen-dir",
+    rebase_path(_gen_dir, root_build_dir),
+    "--header",
+    rebase_path(_header, root_build_dir),
+    "--source",
+    rebase_path(_source, root_build_dir),
+    "--depfile",
+    rebase_path(depfile, root_build_dir),
+  ]
+}
+
+source_set("ui") {
+  sources = [
+    _header,
+    _source,
+  ]
+
+  # The generated files live under root_gen_dir, and the include in the
+  # source says "weglet/ui/generated_resources.h" -- so root_gen_dir has to
+  # be on the include path.
+  public_configs = [ ":ui_config" ]
+  deps = [ ":build_ui" ]
+}
+
+config("ui_config") {
+  include_dirs = [
+    "$root_gen_dir",
+    "$_gen_dir",
+  ]
+}
