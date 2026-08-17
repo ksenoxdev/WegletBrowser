@@ -1,0 +1,25 @@
+[package]
+name = "weglet-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lib]
+name = "weglet_ffi"
+# Static, not cdylib: GN links this straight into weglet.exe, so there is
+# no second file to ship, sign or keep in step with the binary.
+crate-type = ["staticlib"]
+
+[dependencies]
+weglet-core = { path = "../weglet-core" }
+weglet-profile = { path = "../weglet-profile" }
+weglet-security = { path = "../weglet-security" }
+
+[lints.rust]
+# The whole point of this crate. Every block carries a SAFETY comment.
+unsafe_code = "allow"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }

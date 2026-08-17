@@ -1,0 +1,226 @@
+# Corpus for weglet-security::assess_navigation.
+#
+# Format: <expect> <tab> <url>
+#   ok     assess_navigation must return None
+#   warn   must return Some(Warning) -- the user can continue
+#   block  must return Some(Block)   -- no way through
+#
+# Rules of the file:
+#   * "ok" entries are the false-positive budget, and it is zero. Every
+#     one is a real site somebody would actually open. If a change here
+#     turns one of these red, the change is wrong, not the entry.
+#   * "block" is reserved for what is unambiguous: structural damage to
+#     the URL, or a name that folds exactly onto a brand. Everything
+#     softer is "warn", because a heuristic that cannot be dismissed is
+#     a censor.
+#   * Add the URL from every false-positive report to the "ok" section
+#     when it is fixed. That is what stops it coming back.
+#
+# Malicious entries are synthetic patterns, not live phishing URLs --
+# nothing here should be visited.
+
+# ---------------------------------------------------------------------
+# Ordinary sites. The false-positive budget.
+# ---------------------------------------------------------------------
+ok	https://example.com/
+ok	https://www.wikipedia.org/
+ok	https://en.wikipedia.org/wiki/Authority
+ok	https://en.wikipedia.org/wiki/Login
+ok	https://news.ycombinator.com/item?id=1
+ok	https://stackoverflow.com/questions/12345
+ok	https://www.reddit.com/r/rust/
+ok	https://crates.io/crates/serde
+ok	https://docs.rs/tokio/latest/tokio/
+ok	https://doc.rust-lang.org/std/
+ok	https://www.rust-lang.org/
+ok	https://archive.org/details/something
+ok	https://www.bbc.co.uk/news
+ok	https://www.theguardian.com/international
+ok	https://www.nytimes.com/
+ok	https://www.lemonde.fr/
+ok	https://www.spiegel.de/
+ok	https://habr.com/ru/articles/1/
+ok	https://lenta.ru/
+ok	https://ya.ru/
+ok	https://mail.ru/
+ok	https://vk.com/feed
+ok	https://ozon.ru/
+ok	https://wildberries.ru/
+ok	https://www.avito.ru/
+
+# Brand domains that the hand-written root list used to miss.
+ok	https://www.google.com/search?q=rust
+ok	https://accounts.google.com/signin
+ok	https://mail.google.com/mail/u/0/
+ok	https://blog.google/
+ok	https://about.google/
+ok	https://store.google.com/
+ok	https://google.co.nz/
+ok	https://google.com.mx/
+ok	https://google.co.jp/
+ok	https://google.de/
+ok	https://google.pl/
+ok	https://google.com.ar/
+ok	https://www.googleapis.com/auth/userinfo
+ok	https://lh3.googleusercontent.com/a/photo
+ok	https://fonts.gstatic.com/s/outfit/v1.woff2
+ok	https://www.youtube.com/watch?v=abc
+ok	https://youtu.be/abc
+ok	https://www.youtube-nocookie.com/embed/abc
+ok	https://chromium.googlesource.com/chromium/src
+ok	https://goo.gl/maps/abc
+ok	https://github.com/rust-lang/rust
+ok	https://github.dev/rust-lang/rust
+ok	https://raw.githubusercontent.com/a/b/main/c.txt
+ok	https://github.blog/2026-01-01-something/
+ok	https://ghcr.io/v2/
+ok	https://gist.github.com/someone/1234
+ok	https://discord.com/channels/@me
+ok	https://discord.gg/abcdef
+ok	https://cdn.discordapp.com/attachments/1/2/x.png
+ok	https://discord.media/
+ok	https://store.steampowered.com/app/1/
+ok	https://steamcommunity.com/id/someone
+ok	https://cdn.akamai.steamstatic.com/steam/apps/1/header.jpg
+ok	https://www.microsoft.com/en-us/software-download
+ok	https://login.microsoftonline.com/common/oauth2/authorize
+ok	https://outlook.office.com/mail/
+ok	https://outlook.office365.com/mail/
+ok	https://onedrive.live.com/
+ok	https://weglet.sharepoint.com/sites/team
+ok	https://azure.microsoft.com/en-us/
+ok	https://www.apple.com/iphone/
+ok	https://appleid.apple.com/sign-in
+ok	https://www.icloud.com/mail
+ok	https://is1-ssl.mzstatic.com/image/thumb/x.jpg
+ok	https://www.facebook.com/login
+ok	https://m.facebook.com/
+ok	https://scontent.fbcdn.net/v/x.jpg
+ok	https://fb.me/abc
+ok	https://about.meta.com/
+ok	https://www.instagram.com/accounts/login/
+ok	https://instagr.am/p/abc
+ok	https://web.whatsapp.com/
+ok	https://wa.me/1234567890
+ok	https://www.paypal.com/signin
+ok	https://www.paypal.com/us/smarthelp/home
+ok	https://paypal.me/someone
+ok	https://www.paypalobjects.com/webstatic/x.js
+ok	https://www.binance.com/en/login
+ok	https://web.telegram.org/k/
+ok	https://t.me/durov
+ok	https://www.roblox.com/login
+ok	https://tr.rbxcdn.com/x/420/420/Image
+
+# Words that merely contain a brand name.
+ok	https://livestream.com/login
+ok	https://www.livestream.com/
+ok	https://esteam.io/account
+ok	https://mysteam.example/
+ok	https://steamboat-willie.example/
+ok	https://microsoftware.example/
+ok	https://thegooglemuseum.example/
+ok	https://applebees.com/
+ok	https://pineapple.example/
+ok	https://discordia.example/
+ok	https://telegraph.co.uk/
+ok	https://instagrammar.example/
+
+# Words that merely contain a sensitive word.
+ok	https://example.top/authority-records
+ok	https://myshop.top/support
+ok	https://example.com/authors/jane
+ok	https://example.com/secured-by-design
+ok	https://example.shop/live-blog
+ok	https://something.live/blog
+
+# Local and private. A developer's own machine is never phishing.
+ok	http://localhost/
+ok	http://localhost:3000/
+ok	http://localhost:8080/login
+ok	http://127.0.0.1:5173/
+ok	http://127.0.0.1:8080/admin/login
+ok	http://[::1]:9229/
+ok	http://dev.localhost:5173/
+ok	http://api.test/login
+ok	http://printer.local/
+ok	http://nas.lan/login
+ok	http://192.168.1.1/
+ok	http://192.168.0.100:8006/
+ok	http://10.0.0.5:8443/admin
+ok	http://172.16.4.2/login
+ok	http://gitlab.internal/users/sign_in
+
+# Non-standard ports and deep subdomains, without a credential page.
+ok	https://example.com:8443/
+ok	https://example.com:8080/api/v1/items
+ok	https://a.b.c.d.e.example.com/about
+ok	https://myblog.top/posts/1
+ok	https://project.xyz/docs
+
+# Genuine internationalised domains.
+ok	https://xn--e1afmkfd.xn--p1ai/
+ok	https://xn--80aswg.xn--p1ai/
+ok	https://xn--mnchen-3ya.de/
+ok	https://xn--fiqs8s/
+
+# ---------------------------------------------------------------------
+# Unambiguous. No way through.
+# ---------------------------------------------------------------------
+block	ftp://example.com/file
+block	file:///C:/Windows/System32
+block	https://user:pass@evil.example/
+block	https://someone@paypal.com.evil.example/
+block	https://a..com/
+block	https://example.com\@evil.example/
+block	https://example.com/%00
+block	https://example.com/%0d%0aSet-Cookie:%20x
+block	not a url at all
+
+# Typosquats: the name folds exactly onto the brand.
+block	https://gooogle.com/
+block	https://googlle.com/
+block	https://faceb00k.com/login
+block	https://faceb0ok.com/
+block	https://paypaI.com/signin
+block	https://micros0ft.com/account
+block	https://binancce.com/login
+block	https://telegramm.org/
+block	https://instagrarn.com/accounts/login
+
+# Whole-script lookalikes: every letter has a Latin twin.
+block	https://xn--80ak6aa92e.com/
+block	https://xn--pypal-4ve.com/signin
+
+# ---------------------------------------------------------------------
+# Suspicious, but the user decides.
+# ---------------------------------------------------------------------
+warn	https://google-account-verify.com/login
+warn	https://google-account-security-check.com/
+warn	https://secure-login-for-your-google-account-verification.com/signin
+warn	https://googleaccounts-recovery.example/
+warn	https://accounts.google.com.evil-cdn.example/signin
+warn	https://paypal-resolution-center.example/login
+warn	https://paypal.com-account-verify.example/
+warn	https://signin-microsoft-office365.example/
+warn	https://icloud-find-my-device.example/unlock
+warn	https://steamcommunity-tradeoffer.example/
+warn	https://discord-nitro-gift.example/
+warn	https://roblox-free-robux.example/login
+warn	https://telegram-premium-gift.example/
+warn	https://binance-verify-wallet.example/
+
+# Softer signals, only on a page that wants credentials.
+warn	https://free-gift.top/login
+warn	https://claim-now.xyz/verify
+warn	https://example.com:8443/login
+warn	https://a.b.c.d.e.example.com/login
+warn	https://xn--e1afmkfd.xn--p1ai/login
+
+# Structural oddities worth mentioning but not fatal.
+warn	https://example.com./
+warn	https://8.8.8.8/
+warn	https://93.184.216.34/login
+warn	https://bit.ly/abc123
+warn	https://tinyurl.com/abc123
+warn	https://t.co/abc123

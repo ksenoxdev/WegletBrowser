@@ -1,0 +1,18 @@
+[package]
+name = "weglet-security"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+idna = "1"
+# The Public Suffix List, compiled in. Without it "blog.google" and
+# "google.co.nz" cannot be told apart from an impostor, and both get
+# blocked as one.
+psl = "2"
+url = "2"
+
+[lints]
+workspace = true

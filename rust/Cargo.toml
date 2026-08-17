@@ -1,0 +1,31 @@
+# Everything Rust in Weglet. Built by cargo as a static library and
+# linked into weglet.exe by GN -- see weglet/BUILD.gn.
+#
+# Cargo rather than GN's own Rust support because the dependency set is
+# resolved from crates.io. Declaring each one as a third_party GN target
+# would mean maintaining that by hand for no gain.
+[workspace]
+resolver = "2"
+members = ["weglet-url", "weglet-core", "weglet-profile", "weglet-security", "weglet-ffi"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+authors = ["Weglet"]
+publish = false
+
+[workspace.lints.rust]
+# The FFI crate needs it and says so locally; nowhere else does.
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+# Matches the Chromium build it links into: no unwinding across the FFI
+# boundary, and dead code stripped at link time.
+panic = "abort"
+lto = true
+codegen-units = 1
+strip = "debuginfo"

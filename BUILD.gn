@@ -41,6 +41,8 @@ source_set("weglet_lib") {
     "app/weglet_main_delegate.h",
     "browser/weglet_browser_context.cc",
     "browser/weglet_browser_context.h",
+    "browser/weglet_bridge.cc",
+    "browser/weglet_bridge.h",
     "browser/weglet_browser_main_parts.cc",
     "browser/weglet_browser_main_parts.h",
     "browser/weglet_content_browser_client.cc",
@@ -54,6 +56,9 @@ source_set("weglet_lib") {
   ]
 
   deps = [
+    # The browser's own logic: tabs, history, omnibox, profile, security.
+    # Built by cargo, linked here -- see rust/BUILD.gn.
+    "rust:weglet_ffi",
     "//base",
     "//components/embedder_support:user_agent",
     "//content/public/browser",

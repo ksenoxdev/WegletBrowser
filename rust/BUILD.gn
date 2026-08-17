@@ -1,0 +1,79 @@
+# Copyright 2026 Weglet - Licensed under Apache 2.0
+#
+# weglet/rust/BUILD.gn
+#
+# Cargo builds one static library; GN links it. See build_rust.py for why
+# cargo rather than GN's own Rust support.
+
+import("//build/config/rust.gni")
+
+declare_args() {
+  # Debug Rust with a debug Chromium. Off by default even in a debug build:
+  # a debug Rust build of the security corpus is noticeably slower and it
+  # is rarely what is being debugged.
+  weglet_rust_debug = false
+}
+
+_profile = "release"
+if (weglet_rust_debug) {
+  _profile = "debug"
+}
+
+if (is_win) {
+  _lib_name = "weglet_ffi.lib"
+} else {
+  _lib_name = "libweglet_ffi.a"
+}
+
+_lib_path = "$target_out_dir/$_lib_name"
+
+action("weglet_ffi_build") {
+  script = "build_rust.py"
+
+  # Not listed file by file: the depfile below is generated from the actual
+  # sources, so adding a .rs file does not mean editing this list.
+  inputs = [
+    "//weglet/rust/Cargo.toml",
+    "//weglet/rust/Cargo.lock",
+  ]
+
+  outputs = [ _lib_path ]
+  depfile = "$target_out_dir/weglet_ffi.d"
+
+  args = [
+    "--manifest",
+    rebase_path("//weglet/rust/Cargo.toml", root_build_dir),
+    "--target",
+    rust_abi_target,
+    "--out",
+    rebase_path(_lib_path, root_build_dir),
+    "--profile",
+    _profile,
+    "--depfile",
+    rebase_path(depfile, root_build_dir),
+  ]
+}
+
+# What the rest of the build depends on. Anything linking this gets the
+# header path and the library.
+group("weglet_ffi") {
+  public_configs = [ ":weglet_ffi_config" ]
+  deps = [ ":weglet_ffi_build" ]
+}
+
+config("weglet_ffi_config") {
+  include_dirs = [ "//weglet" ]
+  libs = [ _lib_path ]
+
+  if (is_win) {
+    # Rust's std pulls these in on Windows. Without them the link fails on
+    # symbols that look like they should be in the CRT and are not.
+    libs += [
+      "advapi32.lib",
+      "bcrypt.lib",
+      "ntdll.lib",
+      "userenv.lib",
+      "ws2_32.lib",
+    ]
+  }
+}
