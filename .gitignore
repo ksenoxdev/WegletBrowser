@@ -1,0 +1,16 @@
+# Nothing generated. This directory is source only; everything built
+# lands in the Chromium tree''s out/ directory, not here.
+*.obj
+*.pdb
+*.exe
+*.pak
+*.o
+*.a
+*.lib
+
+# Editor and OS noise
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

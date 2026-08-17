@@ -1,0 +1,146 @@
+# Copyright 2026 Weglet - Licensed under Apache 2.0
+#
+# weglet/BUILD.gn
+#
+# Everything Weglet adds to Chromium lives under this directory. Nothing
+# outside it is modified, so `git status` in the Chromium tree stays
+# clean and rebasing onto a new Chromium release is a fetch, not a merge.
+
+import("//build/config/ui.gni")
+import("//tools/grit/repack.gni")
+
+executable("weglet") {
+  sources = [ "app/weglet_main.cc" ]
+
+  deps = [
+    ":weglet_lib",
+    "//base",
+    "//build/win:default_exe_manifest",
+    "//content/public/app",
+  ]
+
+  # No console window on a GUI build; the log file is the log.
+  if (is_win) {
+    configs -= [ "//build/config/win:console" ]
+    configs += [ "//build/config/win:windowed" ]
+    deps += [
+      # content::InitializeSandboxInfo lives here, not in
+      # //content/public/app. Without it the renderer would start
+      # unsandboxed -- and in fact the link just fails.
+      "//content:sandbox_helper_win",
+      "//sandbox/win:sandbox",
+    ]
+  }
+
+  data_deps = [ ":weglet_pak" ]
+}
+
+source_set("weglet_lib") {
+  sources = [
+    "app/weglet_main_delegate.cc",
+    "app/weglet_main_delegate.h",
+    "browser/weglet_browser_context.cc",
+    "browser/weglet_browser_context.h",
+    "browser/weglet_browser_main_parts.cc",
+    "browser/weglet_browser_main_parts.h",
+    "browser/weglet_content_browser_client.cc",
+    "browser/weglet_content_browser_client.h",
+    "browser/weglet_window.cc",
+    "browser/weglet_window.h",
+    "common/weglet_content_client.cc",
+    "common/weglet_content_client.h",
+    "renderer/weglet_content_renderer_client.cc",
+    "renderer/weglet_content_renderer_client.h",
+  ]
+
+  deps = [
+    "//base",
+    "//components/embedder_support:user_agent",
+    "//content/public/browser",
+    "//content/public/common",
+    "//content/public/renderer",
+    "//net",
+    "//ui/base",
+    "//ui/display",
+    "//url",
+  ]
+
+  # Chromium on desktop draws through Aura, so a WebContents cannot be
+  # parented to a bare HWND -- it needs a views::Widget to live in. This
+  # is the same route content_shell takes on desktop.
+  if (use_aura) {
+    deps += [
+      "//ui/aura",
+      "//ui/views",
+      "//ui/views/controls/webview",
+      "//ui/wm",
+      "//ui/wm/public",
+    ]
+  }
+}
+
+# Without a resource pack, startup trips on the first string or image
+# the content layer asks ResourceBundle for.
+#
+# Taken from content/shell's own "pak" target and trimmed: the shell's
+# own resources, its web-ui test resources and the ukm debug page are
+# not ours. Whenever Chromium is updated, diff this against
+# content/shell/BUILD.gn - a resource added there is usually one the
+# content layer now expects everyone to have.
+repack("weglet_pak") {
+  sources = [
+    "$root_gen_dir/base/tracing/protos/tracing_proto_resources.pak",
+    "$root_gen_dir/content/browser/resources/media/media_internals_resources.pak",
+    "$root_gen_dir/content/browser/webrtc/resources/webrtc_internals_resources.pak",
+    "$root_gen_dir/content/content_resources.pak",
+    "$root_gen_dir/content/gpu_resources.pak",
+    "$root_gen_dir/content/histograms_resources.pak",
+    "$root_gen_dir/content/process_resources.pak",
+    "$root_gen_dir/content/quota_internals_resources.pak",
+    "$root_gen_dir/content/service_worker_resources.pak",
+    "$root_gen_dir/mojo/public/js/mojo_bindings_resources.pak",
+    "$root_gen_dir/net/net_resources.pak",
+    "$root_gen_dir/third_party/blink/public/resources/blink_resources.pak",
+    "$root_gen_dir/third_party/blink/public/resources/blink_scaled_resources_100_percent.pak",
+    "$root_gen_dir/third_party/blink/public/resources/inspector_overlay_resources.pak",
+    "$root_gen_dir/third_party/blink/public/strings/blink_strings_en-US.pak",
+    "$root_gen_dir/third_party/blink/public/strings/permission_element_generated_strings.pak",
+    "$root_gen_dir/third_party/blink/public/strings/permission_element_strings_en-US.pak",
+    "$root_gen_dir/ui/resources/ui_lottie_resources.pak",
+    "$root_gen_dir/ui/resources/ui_resources_100_percent.pak",
+    "$root_gen_dir/ui/strings/app_locale_settings_en-US.pak",
+    "$root_gen_dir/ui/strings/auto_image_annotation_strings_en-US.pak",
+    "$root_gen_dir/ui/strings/ax_strings_en-US.pak",
+    "$root_gen_dir/ui/strings/ui_strings_en-US.pak",
+    "$root_gen_dir/ui/webui/resources/webui_resources.pak",
+  ]
+
+  deps = [
+    "//base/tracing/protos:chrome_track_event_resources",
+    "//content:content_resources",
+    "//content/browser/resources",
+    "//content/browser/resources/media:resources",
+    "//content/browser/webrtc/resources",
+    "//mojo/public/js:resources",
+    "//net:net_resources",
+    "//third_party/blink/public:devtools_inspector_resources",
+    "//third_party/blink/public:resources",
+    "//third_party/blink/public:scaled_resources_100_percent",
+    "//third_party/blink/public/strings",
+    "//third_party/blink/public/strings:permission_element_generated_strings",
+    "//third_party/blink/public/strings:permission_element_strings",
+    "//ui/resources",
+    "//ui/strings",
+    "//ui/webui/resources",
+  ]
+
+  if (!is_android && !is_ios) {
+    deps += [ "//content/browser/tracing:resources" ]
+    sources += [
+      "$root_gen_dir/content/browser/tracing/tracing_resources.pak",
+      "$root_gen_dir/content/traces_internals_resources.pak",
+    ]
+  }
+
+  output = "$root_out_dir/weglet.pak"
+}
