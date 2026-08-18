@@ -81,31 +81,34 @@ Two levels:
   address is structurally unsafe (control characters, a backslash in the
   authority, credentials before the host).
 
-The security notice page is styled and wired but is not yet shown by
-anything: a blocked navigation is currently dropped with a log line. Until
-the notice appears, `ProceedPastSecurityNotice` deliberately does not
-proceed — resuming a navigation nobody was warned about is worse than
-doing nothing.
+The security notice page shows for exactly one reason: a navigation
+`WegletSecurityGuard` stopped. `ProceedPastSecurityNotice` grants a
+one-shot allowance for that address and re-navigates; it refuses outright
+when the notice was a hard block, on the browser-process side rather than
+the page's, since a page is our own code but runs in a renderer and a
+compromised renderer could send the message anyway.
 
 ## Where blocking happens, and where it does not
 
-Every path the browser process controls asks `WegletWindow::ShouldBlock`
-before handing a URL to the engine:
+`WegletSecurityGuard`, scoped to the `BrowserContext`, is the one place
+that decides whether a navigation may proceed. Two callers reach it:
 
-- what the user typed in the address bar,
-- a link or `window.open`, through `OpenURLFromTab`,
-- the URL a restored tab is opened at, which came off disk and may have
-  been blocked since the session was written.
+- `WegletNavigationThrottle`, registered from
+  `CreateThrottlesForNavigation` on `WegletContentBrowserClient` — content's
+  own extension point for this. It runs on every top-level navigation the
+  network stack starts, including redirects: a shortened link that
+  resolves to a lookalike is judged again once the destination is known,
+  at `WillRedirectRequest`.
+- `WegletWindow`, for the URLs it hands the engine directly: the omnibox,
+  a restored tab's URL, a link or `window.open` through `OpenURLFromTab`.
 
-`ShouldBlock` checks the user's own block list and the built-in one first,
-then the heuristics, and stops only on a hard block.
-
-**Redirects go past all of it.** A page that loads and then redirects is
-not something a window sees; catching that needs a throttle, which is the
-content layer's own extension point (`CreateURLLoaderThrottles` on
-`WegletContentBrowserClient`). Until that exists, the built-in
-ad-and-tracker list in `blocklist.rs` blocks only at navigation time, not
-per resource.
+The guard checks the user's own block list and the built-in one first,
+then the heuristics, and stops only on a hard block. The built-in
+ad-and-tracker list in `blocklist.rs` is asked through the same path as
+the phishing heuristics, so it applies to a redirect exactly as it applies
+to the first request — not yet to individual subresources, which is a
+different question: `CreateURLLoaderThrottles` is the extension point for
+that, and nothing currently uses it for resource-level blocking.
 
 ## The lists are data, and a profile can replace them
 

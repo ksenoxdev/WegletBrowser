@@ -1,0 +1,78 @@
+name: CI
+
+# Everything here runs without a Chromium checkout: the tab model, the
+# omnibox parser, the security heuristics, the profile, the FFI boundary,
+# the contract/token generators, and protocol.ts's own validation. What
+# this does NOT cover is the C++ side and weglet_unittests, which need a
+# full Chromium build too large to run here -- see CONTRIBUTING.md for
+# running those locally.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  rust:
+    name: Rust (test + clippy)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      # weglet-ffi/tests/boundary.rs binds every extern "C" function by
+      # its declared signature and calls it the way C++ does -- a
+      # mismatch with weglet_ffi.h fails to compile here rather than
+      # becoming undefined behaviour in the browser process.
+      - run: cargo test --workspace
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  generators:
+    name: Contract/token generators
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python3 ui/generators_test.py
+
+  ui:
+    name: protocol.ts validation + typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # ui/run_ui_tests.py compiles and runs under Chromium's own vendored
+      # node, found by layout under third_party/node/. There's no
+      # Chromium checkout here, so this fakes that layout with the
+      # runner's system node -- the point of the check is protocol.ts's
+      # validation logic, not which node binary runs it.
+      - name: Fake the vendored-toolchain layout
+        run: |
+          mkdir -p fake-chromium/third_party/node/linux/node-linux-x64/bin
+          ln -s "$(command -v node)" fake-chromium/third_party/node/linux/node-linux-x64/bin/node
+          npm install --global typescript
+          mkdir -p fake-chromium/third_party/node/node_modules/typescript/lib
+          cp "$(npm root -g)/typescript/lib/tsc.js" \
+             fake-chromium/third_party/node/node_modules/typescript/lib/tsc.js
+
+      - run: python3 ui/run_ui_tests.py --chromium-root fake-chromium
+
+      - name: tsc --noEmit
+        working-directory: ui
+        run: tsc --project tsconfig.json --noEmit
