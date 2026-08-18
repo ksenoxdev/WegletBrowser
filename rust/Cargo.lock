@@ -393,6 +393,7 @@ dependencies = [
  "weglet-core",
  "weglet-profile",
  "weglet-security",
+ "weglet-url",
 ]
 
 [[package]]
@@ -402,6 +403,7 @@ dependencies = [
  "serde",
  "thiserror",
  "toml",
+ "url",
 ]
 
 [[package]]
@@ -410,6 +412,8 @@ version = "0.1.0"
 dependencies = [
  "idna",
  "psl",
+ "serde",
+ "toml",
  "url",
 ]
 

@@ -13,26 +13,16 @@ mod tab;
 
 pub use history::History;
 pub use omnibox::{parse as parse_omnibox, Action as OmniboxAction};
-pub use state::AppState;
-pub use tab::{Tab, TabId};
+pub use state::{AppState, RestoredTab, RestoredWindow, Window};
+pub use tab::{Tab, TabId, WindowId};
 
-// Weglet's own pages. Addresses the user can see and type; the engine
-// never receives these strings, the C++ side maps them to real URLs.
-pub const BLANK_TAB: &str = "about:blank";
-pub const SETTINGS_ADDRESS: &str = "weglet://settings";
-pub const HISTORY_ADDRESS: &str = "weglet://history";
-pub const BOOKMARKS_ADDRESS: &str = "weglet://bookmarks";
-pub const TERMS_ADDRESS: &str = "weglet://terms";
-
-// A page of ours, in the form the user types it. Deliberately exact
-// matches: a prefix test would make "weglet://settings.evil.example" one
-// of our pages.
-pub fn is_internal_address(url: &str) -> bool {
-    matches!(
-        url,
-        BLANK_TAB | SETTINGS_ADDRESS | HISTORY_ADDRESS | BOOKMARKS_ADDRESS | TERMS_ADDRESS
-    )
-}
+// Weglet's own addresses and is_internal_address(), generated from
+// weglet/ui/contract.json by rust/build_rust.py before every cargo build.
+// Not written here by hand: the C++ side generates the same five addresses
+// from the same file, and they went out of step once when they were two
+// separate lists -- three addresses existed here with nothing on the C++
+// side to resolve them to a real page.
+include!("generated_addresses.rs");
 
 #[cfg(test)]
 mod tests {

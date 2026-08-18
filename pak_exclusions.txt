@@ -1,0 +1,20 @@
+# Resource packs content/shell has that Weglet deliberately does not.
+#
+# Format: the pack path, a space, then the reason. Everything after '#' is
+# a comment; blank lines are ignored.
+#
+# A pack in content/shell that is neither in weglet_pak nor here fails the
+# build with its name in the message -- see check_pak.py. That is the
+# point: a pack Chromium starts expecting is otherwise found by a CHECK at
+# startup, with nothing on screen to say why.
+#
+# Data, not code. This was a dict inside check_pak.py, so adding an
+# exclusion meant editing the script that checks the exclusions.
+
+content/shell/shell_resources.pak  content_shell's own UI, not ours
+content/test/web_ui_mojo_test_resources.pak  test-only resources
+components/ukm_resources.pak  the UKM debug page; Weglet records no metrics
+content/browser/devtools/devtools_resources.pak  DevTools is not built in yet; adding it is a product decision, not an oversight
+content/webxr_internals_resources.pak  no WebXR
+device/bluetooth/strings/bluetooth_strings_en-US.pak  iOS-only in content/shell, and Web Bluetooth is denied here anyway -- WegletBrowserContext has no permission delegate
+components/strings/components_strings_en-US.pak  iOS-only in content/shell

@@ -17,9 +17,32 @@ impl TabId {
     }
 }
 
+// Which window a tab is in.
+//
+// The C++ side always expected several: it counts windows, quits when the
+// last one closes, and looks a window up from a WebContents. The model
+// had one flat list of tabs and one active tab, so a second window would
+// have shown the same tabs and fought over which was in front. Ids rather
+// than an index because a window in the middle can close.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct WindowId(u64);
+
+impl WindowId {
+    pub fn new(value: u64) -> Self {
+        Self(value)
+    }
+
+    pub fn value(self) -> u64 {
+        self.0
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tab {
     pub id: TabId,
+    // The window it belongs to. A tab is never in two, and never in none:
+    // AppState creates every tab against a window that exists.
+    pub window: WindowId,
     pub history: History,
     // What the page called itself. Empty until the engine reports one, so
     // `label` falls back to the host rather than showing nothing.
@@ -28,9 +51,10 @@ pub struct Tab {
 }
 
 impl Tab {
-    pub fn new(id: TabId, url: String) -> Self {
+    pub fn new(id: TabId, window: WindowId, url: String) -> Self {
         Self {
             id,
+            window,
             history: History::new(url),
             title: String::new(),
             loading: false,
@@ -77,7 +101,7 @@ mod tests {
     use super::*;
 
     fn tab(url: &str) -> Tab {
-        Tab::new(TabId::new(1), url.to_string())
+        Tab::new(TabId::new(1), WindowId::new(0), url.to_string())
     }
 
     #[test]

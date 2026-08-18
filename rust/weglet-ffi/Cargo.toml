@@ -10,10 +10,17 @@ publish.workspace = true
 name = "weglet_ffi"
 # Static, not cdylib: GN links this straight into weglet.exe, so there is
 # no second file to ship, sign or keep in step with the binary.
-crate-type = ["staticlib"]
+#
+# The rlib alongside it is for tests/boundary.rs, which declares the entry
+# points in an `extern "C"` block exactly as weglet_ffi.h does and links
+# against them -- so a signature that drifts from the header fails to link
+# in `cargo test` rather than becoming undefined behaviour in the browser.
+# Nothing ships it; build_rust.py copies the staticlib and ignores this.
+crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 weglet-core = { path = "../weglet-core" }
+weglet-url = { path = "../weglet-url" }
 weglet-profile = { path = "../weglet-profile" }
 weglet-security = { path = "../weglet-security" }
 

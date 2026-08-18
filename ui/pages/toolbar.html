@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<!-- Copyright 2026 Weglet - Licensed under Apache 2.0
+
+     The chrome: tab strip and address bar. Structure only -- every control
+     is filled in and wired up by toolbar.ts, because the icons come from
+     icons.ts and the hover behaviour from anim.ts.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Weglet</title>
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="base.css" />
+    <link rel="stylesheet" href="toolbar.css" />
+  </head>
+  <body>
+    <div class="chrome-top">
+      <!-- A tablist, said out loud: a screen reader has no other way to know
+           these are tabs, and the previous interface was anonymous divs. -->
+      <div class="tabstrip" id="tabstrip" role="tablist" aria-label="Tabs">
+        <div class="new-tab" id="new-tab" role="button" tabindex="0"></div>
+      </div>
+      <div class="drag-region"></div>
+      <div class="window-controls">
+        <div class="win-btn" id="win-minimize" role="button" tabindex="0"></div>
+        <div class="win-btn" id="win-maximize" role="button" tabindex="0"></div>
+        <div class="win-btn win-close" id="win-close" role="button" tabindex="0"></div>
+      </div>
+    </div>
+
+    <div class="toolbar-row" role="toolbar" aria-label="Browser controls">
+      <div class="nav-button" id="go-back" role="button" tabindex="0"></div>
+      <div class="nav-button" id="go-forward" role="button" tabindex="0"></div>
+      <div class="nav-button" id="reload" role="button" tabindex="0"></div>
+
+      <!-- A div, not a form: a form here would submit and reload the toolbar
+           itself. Enter is handled in toolbar.ts. -->
+      <div class="address-form">
+        <div class="nav-button" id="bookmark-toggle" role="button" tabindex="0"></div>
+        <input
+          class="address-bar"
+          id="address-bar"
+          type="text"
+          placeholder="Search or enter address"
+          autocomplete="off"
+          spellcheck="false"
+          aria-label="Address and search"
+        />
+        <div class="nav-button" id="copy-url" role="button" tabindex="0"></div>
+      </div>
+
+      <div class="nav-button" id="downloads-button" role="button" tabindex="0"></div>
+      <div class="nav-button" id="open-settings" role="button" tabindex="0"></div>
+    </div>
+    <script type="module" src="toolbar.js"></script>
+  </body>
+</html>

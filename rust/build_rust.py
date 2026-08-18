@@ -16,6 +16,69 @@ import shutil
 import subprocess
 import sys
 
+# weglet/build_support.py -- find_node_toolchain and write_depfile, which
+# every build script here needs and which used to exist twice.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import build_support  # noqa: E402
+
+
+def generate(workspace: str) -> None:
+    """Regenerates the two files weglet crates get from weglet/ui.
+
+    Run before every cargo build, not gated by a depfile: both are small to
+    produce, and the crates have to build correctly under a plain `cargo
+    build` too, with no GN action having run first. Both are checked in for
+    the same reason.
+
+      * weglet-core/src/generated_addresses.rs -- Weglet's own addresses,
+        from contract.json. The C++ side generates its copy from the same
+        file, so the addresses a tab can hold and the addresses
+        ResolveForEngine knows how to open cannot list a different set
+        again.
+
+      * weglet-profile/src/generated_defaults.rs -- the default accent,
+        from tokens.json. The same colour the CSS compiles in and the
+        settings page offers first. This used to be a literal in
+        settings.rs that this script kept honest by reading the .rs file
+        with a regular expression: Python parsing Rust to notice a
+        disagreement it could not fix. Generating it means there is
+        nothing left to disagree.
+
+    Each generator is asked for exactly the output wanted. They used to
+    write all of theirs at once, so this script passed throwaway paths
+    inside the source tree and deleted them afterwards.
+    """
+    ui_dir = os.path.join(os.path.dirname(workspace), "ui")
+
+    jobs = [
+        (
+            "generate_contract.py",
+            "--contract",
+            os.path.join(ui_dir, "contract.json"),
+            os.path.join(workspace, "weglet-core", "src", "generated_addresses.rs"),
+        ),
+        (
+            "generate_tokens.py",
+            "--tokens",
+            os.path.join(ui_dir, "tokens.json"),
+            os.path.join(workspace, "weglet-profile", "src", "generated_defaults.rs"),
+        ),
+    ]
+
+    for script, source_flag, source, out in jobs:
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(ui_dir, script),
+                source_flag,
+                source,
+                "--rust",
+                out,
+            ]
+        )
+        if result.returncode != 0:
+            raise SystemExit(result.returncode)
+
 
 def main() -> int:
     parser = argparse.ArgumentParser()
@@ -29,6 +92,8 @@ def main() -> int:
     manifest = os.path.abspath(args.manifest)
     workspace = os.path.dirname(manifest)
     out = os.path.abspath(args.out)
+
+    generate(workspace)
 
     cargo = shutil.which("cargo")
     if cargo is None:
@@ -87,36 +152,18 @@ def main() -> int:
     # change to a .rs file does not rebuild, which is the kind of thing
     # that costs an afternoon.
     if args.depfile:
-        write_depfile(args.depfile, args.out, workspace)
+        # Every .rs plus the manifests: cargo decides what to rebuild, but
+        # GN has to know when to ask it at all.
+        build_support.write_depfile(
+            args.depfile,
+            args.out,
+            workspace,
+            lambda name: name.endswith(".rs")
+            or name in ("Cargo.toml", "Cargo.lock"),
+        )
 
     return 0
 
-
-def write_depfile(depfile: str, out: str, workspace: str) -> None:
-    """Writes a make-style depfile listing every Rust source.
-
-    Paths are relative to the build directory, and that is not cosmetic:
-    an absolute Windows path contains a drive-letter colon, and the
-    depfile format uses the colon as its one separator. Ninja rejects the
-    whole file over it.
-    """
-    sources = []
-    for root, dirs, files in os.walk(workspace):
-        # Skip the build output, or the depfile lists its own products and
-        # the build never settles.
-        dirs[:] = [d for d in dirs if d not in ("target", ".git")]
-        for name in files:
-            if name.endswith(".rs") or name in ("Cargo.toml", "Cargo.lock"):
-                sources.append(os.path.join(root, name))
-
-    # cwd is the build directory: GN runs the script from there and passes
-    # --out relative to it.
-    def relative(path: str) -> str:
-        return os.path.relpath(path).replace("\\", "/")
-
-    deps = " ".join(relative(path) for path in sorted(sources))
-    with open(depfile, "w", encoding="utf-8") as handle:
-        handle.write(f"{out.replace(chr(92), '/')}: {deps}\n")
 
 
 if __name__ == "__main__":

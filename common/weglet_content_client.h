@@ -34,7 +34,6 @@ class WegletContentClient : public content::ContentClient {
       int resource_id) override;
   std::string GetDataResourceString(int resource_id) override;
   gfx::Image& GetNativeImageNamed(int resource_id) override;
-  void AddAdditionalSchemes(Schemes* schemes) override;
 };
 
 }  // namespace weglet

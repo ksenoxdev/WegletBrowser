@@ -8,6 +8,7 @@ _gen_dir = "$target_gen_dir"
 _header = "$root_gen_dir/weglet/ui/generated_resources.h"
 _source = "$root_gen_dir/weglet/ui/generated_resources.cc"
 _tokens_header = "$_gen_dir/weglet_tokens.h"
+_contract_header = "$_gen_dir/generated_contract.h"
 
 action("build_ui") {
   script = "build_ui.py"
@@ -15,9 +16,13 @@ action("build_ui") {
   # Coarse on purpose: the depfile below is generated from the real inputs,
   # so adding a page or a .ts file does not mean editing a list here.
   inputs = [
+    # The shared build helpers both this and the other scripts import.
+    "//weglet/build_support.py",
     "build_ui.py",
     "generate_tokens.py",
+    "generate_contract.py",
     "tokens.json",
+    "contract.json",
     "tsconfig.json",
   ]
 
@@ -25,6 +30,7 @@ action("build_ui") {
     _header,
     _source,
     _tokens_header,
+    _contract_header,
   ]
   depfile = "$_gen_dir/build_ui.d"
 

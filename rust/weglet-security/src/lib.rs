@@ -13,5 +13,11 @@
 mod blocklist;
 mod risk;
 
-pub use blocklist::{canonical_host, is_blocked_host, matches_user_blocklist};
-pub use risk::{assess_navigation, NavigationRisk, RiskLevel};
+pub use blocklist::{
+    canonical_host, is_blocked_host, matches_user_blocklist, set_blocklist_override,
+    USER_BLOCK_REASON, USER_BLOCK_TITLE,
+};
+pub use risk::{
+    assess_navigation, set_brand_rules_override, set_sensitive_words_override,
+    NavigationRisk, RiskLevel,
+};

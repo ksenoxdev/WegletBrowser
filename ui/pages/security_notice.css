@@ -1,0 +1,122 @@
+/* Copyright 2026 Weglet - Licensed under Apache 2.0
+ *
+ * Shown over the page whose navigation was flagged, never in place of it --
+ * so dismissing the notice never loses what was already loaded.
+ */
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--color-surface-raised);
+}
+
+body {
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-popup);
+  color: var(--color-text);
+  font-family: "Instrument Sans", sans-serif;
+  padding: var(--layout-notice-padding);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: var(--space-lg);
+}
+
+.icon {
+  width: var(--layout-notice-icon);
+  height: var(--layout-notice-icon);
+  border-radius: var(--radius-notice-icon);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Two palettes, deliberately different: a block cannot be dismissed and a
+   warning can, so they must not look alike. */
+.icon.block {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+.icon.warning {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.title {
+  font-family: "Outfit", sans-serif;
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-title);
+  color: var(--color-text);
+}
+
+.reason {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-dim);
+  line-height: 1.5;
+  margin-bottom: var(--space-lg);
+}
+
+.detail-row {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-dim);
+  background: var(--color-field);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-detail);
+  padding: var(--space-md) 10px;
+  margin-bottom: 14px;
+  /* The host is the whole point of this row, and a long one must not push the
+     panel wider than the window. */
+  word-break: break-all;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.detail-row span {
+  color: var(--color-text);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-md);
+}
+
+.actions button {
+  flex: 1;
+  font-size: var(--font-size-xs);
+  padding: var(--space-md) 0;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  font-family: "Instrument Sans", sans-serif;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Going back is the accented, obvious action. Proceeding is not: it is
+   outlined in the danger colour and never the default. */
+.dismiss-btn {
+  background: var(--color-accent-solid);
+  border: 1px solid var(--color-accent-solid);
+  color: var(--color-on-accent-solid);
+  font-weight: var(--font-weight-bold);
+}
+
+.dismiss-btn:hover {
+  filter: brightness(1.08);
+}
+
+.proceed-btn {
+  background: transparent;
+  border: 1px solid var(--color-danger-border);
+  color: var(--color-danger);
+}
+
+.proceed-btn:hover {
+  background: rgba(240, 153, 123, 0.1);
+}

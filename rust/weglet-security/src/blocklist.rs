@@ -1,45 +1,53 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// crates/weglet-security/src/blocklist.rs
+// rust/weglet-security/src/blocklist.rs
 //
-// Static ad/tracker domains, ported from the Android app's own list.
-// Only useful for navigation-time blocking here (see risk.rs's own
-// caller) -- real per-resource ad blocking needs raw WebView2 COM
-// access wry doesn't expose, unlike native downloads in weglet-window.
+// Static ad and tracker domains, carried over from the Android app's own
+// list, plus whatever the user added.
+//
+// Asked at navigation time today -- see WegletWindow::ShouldBlock, which
+// is the only caller. Per-resource blocking is possible now and was not
+// before: the previous engine gave no way to see a subresource request,
+// and this comment used to say so. Chromium does, through
+// CreateURLLoaderThrottles on ContentBrowserClient, so the limitation is
+// the caller's absence rather than the engine's. See docs/security.md.
 
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
-const BLOCKED_HOSTS: &[&str] = &[
-    "adnxs.com",
-    "ads.microsoft.com",
-    "adsrvr.org",
-    "amazon-adsystem.com",
-    "2mdn.net",
-    "adservice.google.com",
-    "adservice.google.ru",
-    "app-measurement.com",
-    "bat.bing.com",
-    "clarity.ms",
-    "connect.facebook.net",
-    "criteo.com",
-    "criteo.net",
-    "doubleclick.net",
-    "google-analytics.com",
-    "googlesyndication.com",
-    "googletagmanager.com",
-    "googletagservices.com",
-    "hotjar.com",
-    "mc.yandex.ru",
-    "metrika.yandex.ru",
-    "pixel.facebook.com",
-    "quantserve.com",
-    "scorecardresearch.com",
-    "segment.io",
-    "taboola.com",
-    "track.adform.net",
-    "yandexadexchange.net",
-];
+// The built-in list, as data. One host per line -- see data/blocklist.txt
+// for the format.
+//
+// include_str! rather than a file read at startup: Weglet has no
+// deployment surface beyond the executable, and a data file next to the
+// binary is one more thing to ship, sign and lose. What this buys over
+// the const array it replaces is that the list is editable without
+// reading Rust, and that `set_overrides` can replace it at runtime, so a
+// newer list does not mean a rebuild.
+const BUILT_IN_BLOCKLIST: &str = include_str!("../data/blocklist.txt");
+
+// A list loaded from the profile, if there is one. Replaces the built-in
+// one rather than adding to it: a user who supplies a list has a reason,
+// and silently keeping entries they removed would defeat it.
+static OVERRIDE: OnceLock<HashSet<String>> = OnceLock::new();
+
+// One host per line, '#' starts a comment. Deliberately the simplest
+// format that works: a list anyone can edit in any editor.
+pub fn parse_host_list(text: &str) -> HashSet<String> {
+    text.lines()
+        .map(|line| line.split('#').next().unwrap_or("").trim())
+        .filter(|line| !line.is_empty())
+        .map(canonical_host)
+        .collect()
+}
+
+// Installs a list read from the profile. Takes effect for every later
+// question; ignored if called twice, because the answer changing under a
+// page that is already open would be worse than a stale list.
+pub fn set_blocklist_override(text: &str) {
+    let _ = OVERRIDE.set(parse_host_list(text));
+}
+
 
 // One spelling of a host. Without this "EXAMPLE.com", "example.com.",
 // the punycode form and the unicode form of one domain are four
@@ -57,13 +65,11 @@ pub fn canonical_host(host: &str) -> String {
 // every request. This runs for every subresource of every page, so the
 // per-call cost is the whole point.
 fn blocked_set() -> &'static HashSet<String> {
+    if let Some(overridden) = OVERRIDE.get() {
+        return overridden;
+    }
     static SET: OnceLock<HashSet<String>> = OnceLock::new();
-    SET.get_or_init(|| {
-        BLOCKED_HOSTS
-            .iter()
-            .map(|host| canonical_host(host))
-            .collect()
-    })
+    SET.get_or_init(|| parse_host_list(BUILT_IN_BLOCKLIST))
 }
 
 // Walks up the domain (a.b.example.com -> b.example.com -> ...) so a
@@ -72,6 +78,19 @@ pub fn is_blocked_host(host: &str) -> bool {
     let set = blocked_set();
     walk_up(&canonical_host(host), |candidate| set.contains(candidate))
 }
+
+// What the notice says when the user's own list is what stopped a
+// navigation.
+//
+// Here rather than in the browser process because every other word the
+// notice page shows comes from this crate -- the page renders whatever
+// title and reason it is handed and has no wording of its own. Two
+// sources for the same screen is how one of them ends up saying
+// something the other contradicts.
+pub const USER_BLOCK_TITLE: &str = "Site blocked";
+pub const USER_BLOCK_REASON: &str =
+    "You blocked this site. Remove it from the block list in settings to \
+     visit it again.";
 
 pub fn matches_user_blocklist(host: &str, blocked: &[String]) -> bool {
     if blocked.is_empty() {
@@ -101,6 +120,27 @@ fn walk_up(host: &str, matches: impl Fn(&str) -> bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_built_in_list_parses_and_is_canonical() {
+        let hosts = parse_host_list(BUILT_IN_BLOCKLIST);
+        assert!(!hosts.is_empty());
+        for host in &hosts {
+            assert_eq!(host, &canonical_host(host));
+            assert!(!host.starts_with('#'));
+            assert!(!host.contains(' '));
+        }
+    }
+
+    #[test]
+    fn comments_and_blank_lines_are_ignored() {
+        let hosts = parse_host_list(
+            "# a comment\n\n  EXAMPLE.com.  \nads.example # trailing\n",
+        );
+        assert_eq!(hosts.len(), 2);
+        assert!(hosts.contains("example.com"));
+        assert!(hosts.contains("ads.example"));
+    }
 
     #[test]
     fn an_exact_blocked_host_matches() {

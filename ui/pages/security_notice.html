@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<!-- Copyright 2026 Weglet - Licensed under Apache 2.0 -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Security notice</title>
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="base.css" />
+    <link rel="stylesheet" href="security_notice.css" />
+  </head>
+  <!-- alertdialog, not dialog: this interrupts the user with something they
+       have to answer, and a screen reader should say so. -->
+  <body role="alertdialog" aria-labelledby="title" aria-describedby="reason">
+    <div class="row">
+      <div class="icon" id="icon" aria-hidden="true"></div>
+      <div class="title" id="title"></div>
+    </div>
+    <div class="reason" id="reason"></div>
+    <div class="detail-row" id="detail-row" hidden>
+      Site: <span id="detail-host"></span>
+    </div>
+    <div class="actions">
+      <button type="button" class="dismiss-btn" id="dismiss-btn">Go back</button>
+      <!-- Absent for a hard block, not merely disabled: there is no bypass to
+           offer, and a greyed-out button invites the user to look for one. -->
+      <button type="button" class="proceed-btn" id="proceed-btn" hidden>
+        Proceed anyway
+      </button>
+    </div>
+    <script type="module" src="security_notice.js"></script>
+  </body>
+</html>

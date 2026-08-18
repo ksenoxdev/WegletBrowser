@@ -1,0 +1,459 @@
+/* Copyright 2026 Weglet - Licensed under Apache 2.0
+ *
+ * The settings page. Four panels behind a segmented switcher.
+ *
+ * The translucent whites here are deliberately not tokens: they are surfaces
+ * built from opacity over whatever is behind them, not named colours. Naming
+ * them would suggest they can be changed independently, and they cannot --
+ * they only work as a set.
+ */
+
+body {
+  display: flex;
+  justify-content: center;
+  padding: var(--layout-settings-padding-top) var(--space-xl);
+}
+
+.page {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: var(--layout-settings-max-width);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-xxl);
+}
+
+.header h1 {
+  font-family: "Outfit", sans-serif;
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-display);
+  margin: 0;
+}
+
+.done {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-accent-solid);
+  color: var(--color-on-accent-solid);
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: var(--space-md) var(--space-xxl);
+  font-family: "Instrument Sans", sans-serif;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+  cursor: pointer;
+  /* A glow rather than a drop shadow: the button is the accent colour, and a
+     dark shadow under it would read as a lift off the page instead of as the
+     one thing here that is lit. */
+  box-shadow: 0 0 14px color-mix(in srgb, var(--color-ring) 25%, transparent);
+  transition: background var(--motion-fast), box-shadow var(--motion-fast);
+}
+
+.done:hover {
+  background: var(--color-ring);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--color-ring) 40%, transparent);
+}
+
+/* A glass pill that slides behind the active tab rather than four tabs that
+   each light up: the movement is what tells the user the panels are one row
+   and not four separate places. */
+.switcher {
+  position: relative;
+  display: flex;
+  padding: var(--space-sm);
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(14px);
+  margin-bottom: var(--space-xxl);
+}
+
+.switcher-pill {
+  position: absolute;
+  top: var(--space-sm);
+  left: var(--space-sm);
+  /* Width from the tab count, position from the index -- both set as custom
+     properties by settings.ts, so adding a fifth panel needs no CSS change. */
+  width: calc((100% - var(--space-md)) / var(--count, 4));
+  height: calc(100% - var(--space-md));
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  transition: transform var(--motion-switcher) cubic-bezier(0.22, 1, 0.36, 1);
+  transform: translateX(calc(100% * var(--index, 0)));
+  pointer-events: none;
+}
+
+.switcher-tab {
+  position: relative;
+  flex: 1;
+  text-align: center;
+  padding: var(--space-md) 0;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--color-text-dim);
+  cursor: pointer;
+  z-index: 1;
+  transition: color var(--motion-fast), font-weight var(--motion-fast);
+}
+
+.switcher-tab.active {
+  color: var(--color-text);
+  font-weight: var(--font-weight-bold);
+}
+
+.panel {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: var(--radius-panel-inner);
+  padding: var(--space-xxl);
+}
+
+.panel[hidden] {
+  display: none;
+}
+
+.panel-heading {
+  font-family: "Outfit", sans-serif;
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-title);
+  margin: 0 0 var(--space-sm);
+}
+
+.panel-hint {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-dim);
+  margin: 0 0 var(--space-xxl);
+}
+
+.section-gap {
+  margin-top: var(--space-xxl);
+}
+
+.engine-choice,
+.shape-choice {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.engine-pill {
+  padding: var(--space-md) var(--space-xl);
+  border-radius: var(--radius-pill);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--color-text-dim);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: background var(--motion-fast), border-color var(--motion-fast),
+    color var(--motion-fast);
+}
+
+.engine-pill:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--color-text);
+}
+
+.engine-pill.active {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: var(--color-text);
+  font-weight: var(--font-weight-bold);
+}
+
+.custom-engine-row {
+  margin-top: var(--space-lg);
+}
+
+.custom-engine-row .panel-hint {
+  margin-bottom: var(--space-sm);
+}
+
+/* Monospace, because the template is something to be read character by
+   character -- a %s that turned into %5 would be invisible in a proportional
+   face. */
+.custom-engine-row code {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 5px;
+  border-radius: var(--radius-code);
+}
+
+.custom-engine-input {
+  width: 100%;
+  height: var(--layout-engine-input-height);
+  background: var(--color-field);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  font-family: "JetBrains Mono", monospace;
+  font-size: var(--font-size-sm);
+  padding: 0 var(--space-lg);
+  outline: none;
+  transition: border-color var(--motion-fast);
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.custom-engine-input::placeholder {
+  color: var(--color-text-dim);
+}
+
+.custom-engine-input:hover {
+  border-color: var(--color-border-strong);
+}
+
+.custom-engine-input:focus,
+.block-host-input:focus,
+.hex-input:focus {
+  border-color: var(--color-ring);
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xl);
+}
+
+.toggle-text .panel-heading,
+.toggle-text .panel-hint {
+  margin: 0;
+}
+
+.toggle-text .panel-hint {
+  margin-top: var(--space-sm);
+}
+
+.toggle {
+  width: var(--layout-toggle-width);
+  height: var(--layout-toggle-height);
+  border-radius: var(--radius-pill);
+  background: var(--color-field);
+  border: 1px solid var(--color-border);
+  position: relative;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--motion-fast), border-color var(--motion-fast);
+}
+
+.toggle::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: var(--layout-toggle-knob);
+  height: var(--layout-toggle-knob);
+  border-radius: 50%;
+  background: var(--color-text-dim);
+  transition: transform var(--motion-fast), background var(--motion-fast);
+}
+
+.toggle.on {
+  background: color-mix(in srgb, var(--color-ring) 40%, transparent);
+  border-color: var(--color-ring);
+}
+
+.toggle.on::after {
+  background: var(--color-text);
+  transform: translateX(var(--layout-toggle-travel));
+}
+
+.refresh-btn,
+.reset-color-btn {
+  position: relative;
+  overflow: hidden;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-dim);
+  border-radius: var(--radius-pill);
+  padding: var(--space-sm) var(--space-lg);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  font-family: "Instrument Sans", sans-serif;
+}
+
+.refresh-btn:hover,
+.reset-color-btn:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}
+
+.refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.threat-feed-actions {
+  margin-top: var(--space-md);
+}
+
+.block-host-row {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
+.block-host-input,
+.hex-input {
+  flex: 1;
+  height: var(--layout-field-height);
+  background: var(--color-field);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  font-family: "Instrument Sans", sans-serif;
+  font-size: var(--font-size-sm);
+  padding: 0 var(--space-lg);
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.block-host-btn {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-accent-solid);
+  color: var(--color-on-accent-solid);
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 0 var(--space-lg);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  cursor: pointer;
+  font-family: "Instrument Sans", sans-serif;
+}
+
+.blocked-hosts-list {
+  margin-top: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.blocked-host-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-lg);
+  font-size: var(--font-size-sm);
+}
+
+.blocked-host-remove {
+  color: var(--color-text-dim);
+  cursor: pointer;
+  font-size: var(--font-size-xs);
+  background: none;
+  border: 0;
+}
+
+.blocked-host-remove:hover {
+  color: var(--color-text);
+}
+
+.blocked-hosts-empty {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-dim);
+  padding: var(--space-sm) 0;
+}
+
+/* Outlined in the danger colour, never filled: it is the one control here
+   whose result cannot be undone. */
+.clear-data-btn {
+  position: relative;
+  overflow: hidden;
+  margin-top: var(--space-md);
+  background: transparent;
+  border: 1px solid var(--color-danger-border);
+  color: var(--color-danger);
+  border-radius: var(--radius-pill);
+  padding: var(--space-sm) var(--space-lg);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  font-family: "Instrument Sans", sans-serif;
+}
+
+.clear-data-btn:hover {
+  background: rgba(240, 153, 123, 0.1);
+}
+
+.color-preset-row {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
+.color-preset {
+  width: var(--layout-color-preset);
+  height: var(--layout-color-preset);
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid transparent;
+  padding: 0;
+  transition: transform var(--motion-preset), border-color var(--motion-preset);
+}
+
+.color-preset:hover {
+  transform: scale(1.1);
+}
+
+.color-preset.active {
+  border-color: var(--color-text);
+}
+
+.hex-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
+.hex-swatch {
+  width: var(--layout-swatch);
+  height: var(--layout-swatch);
+  border-radius: var(--radius-swatch);
+  border: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.reset-color-btn {
+  height: var(--layout-field-height);
+  padding: 0 var(--space-lg);
+  white-space: nowrap;
+}
+
+.shape-choice {
+  margin-top: var(--space-md);
+}
+
+.shape-option {
+  position: relative;
+  overflow: hidden;
+  flex: 1;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-dim);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) 0;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  font-family: "Instrument Sans", sans-serif;
+}
+
+.shape-option:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}
+
+.shape-option.active {
+  background: color-mix(in srgb, var(--color-ring) 25%, transparent);
+  border-color: var(--color-ring);
+  color: var(--color-text);
+}

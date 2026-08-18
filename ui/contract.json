@@ -1,0 +1,258 @@
+{
+  "$comment": [
+    "The contract between the browser and its own pages: every message a",
+    "page may send, and every path a page is served at.",
+    "",
+    "generate_contract.py turns this into a TypeScript module and a C++",
+    "header. Neither side declares these names itself, because when they",
+    "were declared twice they went out of step -- thirteen messages existed",
+    "in TypeScript with no handler in C++, and Chromium answers an",
+    "unregistered chrome.send() by crashing the browser process.",
+    "",
+    "Adding a message here is what makes it exist. Its handler still has to",
+    "be written, and the generated header lists it so the compiler asks."
+  ],
+  "pages": {
+    "$comment": [
+      "Served at chrome://weglet/<path>. The names are also how the toolbar",
+      "recognises one of our own tabs, so they cannot live in two places."
+    ],
+    "newtab": "newtab.html",
+    "toolbar": "toolbar.html",
+    "settings": "settings.html",
+    "security-notice": "security_notice.html"
+  },
+  "$messages_comment": [
+    "args is what the page sends, in order. Types are the TypeScript ones;",
+    "the C++ side receives them as a base::ListValue and validates each",
+    "itself -- a page is our own code, but it runs in a renderer, and a",
+    "compromised renderer is what this boundary is for.",
+    "",
+    "`implemented: false` means the handler exists and only logs. It is",
+    "still registered, because an unregistered name crashes the browser.",
+    "The flag is what the generated header reports, so the gap is visible",
+    "rather than remembered."
+  ],
+  "messages": [
+    {
+      "name": "navigate",
+      "args": [
+        "string"
+      ],
+      "implemented": true
+    },
+    {
+      "name": "goBack",
+      "args": [],
+      "implemented": true
+    },
+    {
+      "name": "goForward",
+      "args": [],
+      "implemented": true
+    },
+    {
+      "name": "reload",
+      "args": [],
+      "implemented": true
+    },
+    {
+      "name": "newTab",
+      "args": [],
+      "implemented": true
+    },
+    {
+      "name": "closeTab",
+      "args": [
+        "TabId"
+      ],
+      "implemented": true
+    },
+    {
+      "name": "activateTab",
+      "args": [
+        "TabId"
+      ],
+      "implemented": true
+    },
+    {
+      "name": "openSettings",
+      "args": [],
+      "implemented": true
+    },
+    {
+      "name": "requestState",
+      "args": [],
+      "implemented": true
+    },
+    {
+      "name": "securityDismiss",
+      "args": [],
+      "implemented": true
+    },
+    {
+      "name": "securityProceed",
+      "args": [],
+      "implemented": true
+    },
+    {
+      "name": "addShortcut",
+      "args": [
+        "string",
+        "string"
+      ],
+      "implemented": true
+    },
+    {
+      "name": "editShortcut",
+      "args": [
+        "number",
+        "string",
+        "string"
+      ],
+      "implemented": true
+    },
+    {
+      "name": "removeShortcut",
+      "args": [
+        "number"
+      ],
+      "implemented": true
+    },
+    {
+      "name": "setSearchEngine",
+      "args": [
+        "string"
+      ],
+      "implemented": true
+    },
+    {
+      "name": "setCustomSearchUrl",
+      "args": [
+        "string"
+      ],
+      "implemented": true
+    },
+    {
+      "name": "setRestoreSession",
+      "args": [
+        "boolean"
+      ],
+      "implemented": true
+    },
+    {
+      "name": "setAccentColor",
+      "args": [
+        "string"
+      ],
+      "implemented": true
+    },
+    {
+      "name": "setAddressBarShape",
+      "args": [
+        "string"
+      ],
+      "implemented": true
+    },
+    {
+      "name": "blockHost",
+      "args": [
+        "string"
+      ],
+      "implemented": true
+    },
+    {
+      "name": "unblockHost",
+      "args": [
+        "number"
+      ],
+      "implemented": true
+    },
+    {
+      "name": "clearBrowsingData",
+      "args": [],
+      "implemented": false
+    },
+    {
+      "name": "setThreatFeedEnabled",
+      "args": [
+        "boolean"
+      ],
+      "implemented": false
+    },
+    {
+      "name": "refreshThreatFeed",
+      "args": [],
+      "implemented": false
+    }
+  ],
+  "$pushes_comment": [
+    "The other direction: what the browser calls on a page.",
+    "",
+    "WebUI pushes by calling a named function on a global, so each of these",
+    "is a name that has to be spelled the same in C++ and in TypeScript. It",
+    "was not: C++ called weglet.setNewTabState while the page installed",
+    "weglet.setNewTab, and the new tab page silently never received its",
+    "shortcuts. Nothing caught it, because this half of the contract was the",
+    "half nobody generated.",
+    "",
+    "'page' is which page receives it, by the key from the pages block. That",
+    "is also what lets the browser push only to the pages a change concerns",
+    "instead of re-serialising everything to everyone."
+  ],
+  "pushes": {
+    "state": {
+      "page": "toolbar",
+      "function": "setState"
+    },
+    "newTab": {
+      "page": "newtab",
+      "function": "setNewTab"
+    },
+    "settings": {
+      "page": "settings",
+      "function": "setSettings"
+    },
+    "risk": {
+      "page": "security-notice",
+      "function": "setRisk"
+    }
+  },
+  "internal_addresses": {
+    "$comment": [
+      "The addresses the tab model (rust/weglet-core) knows as its own, in",
+      "the form the user sees them. Rust owns the literal strings -- see",
+      "weglet-core/src/lib.rs -- and this list has to name the same five,",
+      "because they were the same five once and drifted: three existed in",
+      "Rust with nothing on the C++ side to resolve them to a real page, so",
+      "a tab could carry a human label like 'Bookmarks' while the URL it",
+      "tried to load was a scheme the engine had never heard of.",
+      "",
+      "'page' is which weglet:// page (from the pages block above) currently",
+      "stands in for this address. Several may point at newtab.html until",
+      "their own page exists -- that is a real product gap, not a bug, and",
+      "recorded here rather than silently absorbed into ResolveForEngine so",
+      "it stays visible."
+    ],
+    "blank-tab": {
+      "address": "about:blank",
+      "page": "newtab"
+    },
+    "settings": {
+      "address": "weglet://settings",
+      "page": "settings"
+    },
+    "history": {
+      "address": "weglet://history",
+      "page": "newtab"
+    },
+    "bookmarks": {
+      "address": "weglet://bookmarks",
+      "page": "newtab"
+    },
+    "terms": {
+      "address": "weglet://terms",
+      "page": "newtab"
+    }
+  }
+}

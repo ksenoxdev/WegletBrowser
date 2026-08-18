@@ -35,6 +35,26 @@ impl Paths {
         self.root.join("settings.toml")
     }
 
+    // Optional data files. Present means the user wants their own list
+    // instead of the built-in one; absent -- which is the normal case --
+    // means the compiled-in table stands. Nothing is written to any of
+    // them, so a profile that never had one never gets one.
+    pub fn blocklist_file(&self) -> PathBuf {
+        self.root.join("blocklist.txt")
+    }
+
+    pub fn brands_file(&self) -> PathBuf {
+        self.root.join("brands.toml")
+    }
+
+    pub fn sensitive_words_file(&self) -> PathBuf {
+        self.root.join("sensitive_words.txt")
+    }
+
+    pub fn engines_file(&self) -> PathBuf {
+        self.root.join("engines.toml")
+    }
+
     pub fn session_file(&self) -> PathBuf {
         self.root.join("session.toml")
     }

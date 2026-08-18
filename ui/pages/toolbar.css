@@ -1,0 +1,285 @@
+/* Copyright 2026 Weglet - Licensed under Apache 2.0
+ *
+ * Every value comes from a token. A literal here is a bug: the C++ side
+ * sizes the view holding this markup from the same tokens, and when the two
+ * disagree the bottom of the toolbar is clipped.
+ *
+ * What is NOT here: hover and active colours. Those are interpolated per
+ * frame in anim.ts, because a hover that flips between two classes reads as
+ * a state change and one that relaxes towards a target reads as weight.
+ */
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  /* The chrome is a card, lighter than the page below it -- not the same
+     near-black. That contrast is what separates browser from content. */
+  background: var(--color-surface);
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--layout-chrome-gap);
+  color: var(--color-text);
+  font-family: "Instrument Sans", sans-serif;
+  /* Bottom padding halved, so the gap under the toolbar row is not as tall
+     as the ones around it. */
+  padding: var(--layout-chrome-padding) var(--layout-chrome-padding)
+    var(--layout-chrome-padding-bottom) var(--layout-chrome-padding);
+}
+
+.chrome-top {
+  display: flex;
+  align-items: center;
+  gap: var(--layout-chrome-gap);
+}
+
+.tabstrip {
+  display: flex;
+  align-items: center;
+  gap: var(--layout-chrome-gap);
+  min-height: var(--layout-tab-height);
+  overflow: hidden;
+  /* Claims the space its sibling drag region gives up, so tabs have room. */
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tab-pill {
+  display: flex;
+  align-items: center;
+  gap: var(--layout-chrome-gap);
+  padding: 0 var(--space-sm) 0 var(--space-lg);
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  color: var(--color-text-dim);
+  font-size: var(--font-size-sm);
+  /* flex-basis 0%, not auto: every tab claims an equal share rather than
+     sizing off its own title. The low floor lets a tab shrink to favicon
+     plus close button -- the title ellipsis-clips away first -- so the strip
+     never overflows and hides the "+" button once enough tabs are open. */
+  flex: 1 1 0%;
+  min-width: var(--layout-tab-min-width);
+  max-width: var(--layout-tab-max-width);
+  cursor: pointer;
+  user-select: none;
+}
+
+.tab-pill.active {
+  background: var(--color-surface-raised);
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+  font-weight: var(--font-weight-bold);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.tab-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-favicon {
+  position: relative;
+  width: var(--layout-tab-favicon);
+  height: var(--layout-tab-favicon);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* A ring around the favicon rather than a separate spinner: the tab is
+   already only 32px tall, and a second element would have nowhere to go. */
+.tab-favicon::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: var(--color-ring);
+  opacity: 0;
+  animation: tab-spin var(--motion-tab-spin) linear infinite;
+  animation-play-state: paused;
+}
+
+.tab-favicon.loading::after {
+  opacity: 1;
+  animation-play-state: running;
+}
+
+.tab-favicon.loading .tab-favicon-mark {
+  opacity: 0.35;
+}
+
+.tab-favicon-mark {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  object-fit: contain;
+}
+
+@keyframes tab-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Hidden until the tab is hovered or active: on a strip of eight tabs, eight
+   visible crosses is eight things to misclick. */
+.tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--space-sm);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-lg);
+  line-height: 1;
+  flex-shrink: 0;
+  opacity: 0;
+}
+
+.tab-pill:hover .tab-close,
+.tab-pill.active .tab-close {
+  opacity: 1;
+}
+
+.new-tab {
+  width: var(--layout-new-tab-button);
+  height: var(--layout-new-tab-button);
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-dim);
+  cursor: pointer;
+  flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Fixed and small, so the tab strip claims the room instead. Its only job is
+   to give the user somewhere to grab the window that is not a tab. */
+.drag-region {
+  flex: 0 0 var(--layout-drag-region-width);
+  min-width: var(--layout-drag-region-width);
+  align-self: stretch;
+  -webkit-app-region: drag;
+}
+
+.window-controls {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.win-btn {
+  width: var(--layout-window-button-width);
+  height: var(--layout-window-button-height);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-dim);
+  font-size: var(--font-size-md);
+  cursor: pointer;
+}
+
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: var(--layout-chrome-gap);
+  height: var(--layout-toolbar-row-height);
+  /* The address form is centred against this row's full width by absolute
+     positioning, not by flex margin. The left cluster is three buttons and
+     the right is two, and margin:auto only balances the space around the
+     form -- so it drifted towards the wider side. */
+  position: relative;
+}
+
+.nav-button {
+  width: var(--layout-nav-button);
+  height: var(--layout-nav-button);
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-dim);
+  font-size: var(--font-size-lg);
+  cursor: pointer;
+  flex-shrink: 0;
+  /* Both needed by spawnRipple, which appends an absolutely positioned
+     circle that has to be clipped to the button. */
+  position: relative;
+  overflow: hidden;
+}
+
+/* Dimmed rather than hidden: a control that disappears moves the ones beside
+   it, and the user's aim goes with it. */
+.nav-button.disabled {
+  color: rgba(166, 165, 170, 0.38);
+  cursor: default;
+}
+
+/* Pins the right-hand cluster to the row's end -- the address form is
+   absolutely positioned, so these are the only flex items left. */
+#downloads-button {
+  margin-left: auto;
+}
+
+.address-form {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  max-width: var(--layout-address-form-max-width);
+  display: flex;
+  align-items: center;
+  gap: var(--layout-chrome-gap);
+}
+
+.address-bar {
+  flex: 1;
+  min-width: 0;
+  height: var(--layout-address-bar-height);
+  background: var(--color-field);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  color: var(--color-text);
+  font-family: "Instrument Sans", sans-serif;
+  font-size: var(--font-size-lg);
+  padding: 0 var(--space-xl);
+  outline: none;
+  /* The one control that keeps a CSS transition: it is not driven by the
+     heat strip, and its border is a two-state thing rather than a
+     continuous one. */
+  transition: border-color var(--motion-fast), border-radius var(--motion-fast);
+}
+
+/* Set on <html> from the settings; "pill" is the default above. */
+html[data-address-shape="rounded"] .address-bar {
+  border-radius: var(--radius-md);
+}
+
+html[data-address-shape="square"] .address-bar {
+  border-radius: var(--radius-square);
+}
+
+.address-bar::placeholder {
+  color: var(--color-text-dim);
+}
+
+.address-bar:hover {
+  border-color: var(--color-border-strong);
+}
+
+.address-bar:focus {
+  border-color: var(--color-ring);
+}

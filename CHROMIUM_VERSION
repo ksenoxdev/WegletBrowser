@@ -1,0 +1,18 @@
+# The Chromium revision Weglet is built against.
+#
+# Nothing recorded this before, so which tree a build came from lived only
+# in whoever ran gclient. Checked by weglet/check_chromium_version.py
+# against chrome/VERSION in the tree being built, so a mismatch is a build
+# error naming both versions rather than a link failure or a CHECK at
+# startup.
+#
+# To move: check out the tag below in src/, run
+#   gclient sync --with_branch_heads --with_tags -D
+# and update this file in the same commit as any code the move required.
+
+VERSION=153.0.8010.0
+COMMIT=6f01c9c2331e6c4461981204a46ac7c0fa185122
+
+# The last stable release this is known to build against, for a release
+# branch. Every API Weglet uses is identical on 153, 152 and 151.
+STABLE=152.0.7977.42

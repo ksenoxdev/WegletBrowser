@@ -8,6 +8,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::Error;
 
+// Mirrors weglet_core::RestoredWindow. See to_restore_input.
+type RestoredTab = (Vec<String>, usize);
+type RestoredWindow = (Vec<RestoredTab>, usize);
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "kebab-case")]
 pub struct SessionTab {
@@ -17,14 +21,29 @@ pub struct SessionTab {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "kebab-case")]
-pub struct Session {
+pub struct SessionWindow {
     pub tabs: Vec<SessionTab>,
     pub active: usize,
 }
 
-// One renderer process per tab on restore, so this is a startup cost as
-// much as a memory one. Matches AppState's own ceiling.
-const MAX_TABS: usize = 100;
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct Session {
+    pub windows: Vec<SessionWindow>,
+
+    // What a session written before windows existed looks like: a flat
+    // tab list and one active index. Read and folded into a single window
+    // by repair(), then never written again -- an upgrade must not throw
+    // away the tabs someone had open.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub tabs: Vec<SessionTab>,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub active: usize,
+}
+
+fn is_zero(value: &usize) -> bool {
+    *value == 0
+}
 
 impl Session {
     // A missing file is a first run. A corrupt one is an error the caller
@@ -65,27 +84,57 @@ impl Session {
     // here was written by a previous run, or by whatever else touched the
     // file, and an out-of-range one would panic at startup.
     fn repair(&mut self) {
-        self.tabs.truncate(MAX_TABS);
-        self.tabs.retain(|tab| !tab.entries.is_empty());
-        for tab in &mut self.tabs {
-            tab.cursor = tab.cursor.min(tab.entries.len() - 1);
+        // The pre-windows shape, folded in. Only when there is no windows
+        // block at all, so a file written by this version is never read
+        // twice.
+        if self.windows.is_empty() && !self.tabs.is_empty() {
+            self.windows.push(SessionWindow {
+                tabs: std::mem::take(&mut self.tabs),
+                active: self.active,
+            });
         }
-        if self.tabs.is_empty() {
-            self.active = 0;
-        } else {
-            self.active = self.active.min(self.tabs.len() - 1);
+        self.tabs.clear();
+        self.active = 0;
+
+        // No cap here on purpose. How many tabs and windows may exist is
+        // the model's rule, and AppState::restore enforces it -- a copy
+        // of the number in this file would be a second place to change
+        // it and a second place to get it wrong. What repair() is for is
+        // making the file safe to index with, which is a different job.
+        for window in &mut self.windows {
+            window.tabs.retain(|tab| !tab.entries.is_empty());
+            for tab in &mut window.tabs {
+                tab.cursor = tab.cursor.min(tab.entries.len() - 1);
+            }
+            window.active = if window.tabs.is_empty() {
+                0
+            } else {
+                window.active.min(window.tabs.len() - 1)
+            };
         }
+        // A window with no tabs cannot be shown.
+        self.windows.retain(|window| !window.tabs.is_empty());
     }
 
-    // The shape AppState::restore wants. Keeps the two crates from having
-    // to know each other's types.
-    pub fn to_restore_input(&self) -> (Vec<(Vec<String>, usize)>, usize) {
-        let tabs = self
-            .tabs
+    // The shape AppState::restore wants. The tuple is spelled out here
+    // rather than imported, because this crate deliberately does not
+    // depend on weglet-core: the crate that is all IO should not be able
+    // to reach into the one that has none. weglet-core names the same
+    // shape RestoredWindow.
+    pub fn to_restore_input(&self) -> Vec<RestoredWindow> {
+        self.windows
             .iter()
-            .map(|tab| (tab.entries.clone(), tab.cursor))
-            .collect();
-        (tabs, self.active)
+            .map(|window| {
+                (
+                    window
+                        .tabs
+                        .iter()
+                        .map(|tab| (tab.entries.clone(), tab.cursor))
+                        .collect(),
+                    window.active,
+                )
+            })
+            .collect()
     }
 }
 
@@ -106,6 +155,10 @@ mod tests {
         }
     }
 
+    fn window(tabs: Vec<SessionTab>, active: usize) -> SessionWindow {
+        SessionWindow { tabs, active }
+    }
+
     #[test]
     fn a_missing_file_is_an_empty_session() {
         assert_eq!(Session::load(&file("missing")).unwrap(), Session::default());
@@ -115,11 +168,51 @@ mod tests {
     fn a_session_round_trips_through_disk() {
         let path = file("roundtrip");
         let session = Session {
-            tabs: vec![tab(&["https://a.example", "https://a2.example"], 1)],
-            active: 0,
+            windows: vec![window(
+                vec![tab(&["https://a.example", "https://a2.example"], 1)],
+                0,
+            )],
+            ..Session::default()
         };
         session.save(&path).unwrap();
         assert_eq!(Session::load(&path).unwrap(), session);
+    }
+
+    #[test]
+    fn several_windows_round_trip_separately() {
+        let path = file("windows");
+        let session = Session {
+            windows: vec![
+                window(vec![tab(&["https://a.example"], 0)], 0),
+                window(
+                    vec![tab(&["https://b.example"], 0), tab(&["https://c.example"], 0)],
+                    1,
+                ),
+            ],
+            ..Session::default()
+        };
+        session.save(&path).unwrap();
+        let loaded = Session::load(&path).unwrap();
+        assert_eq!(loaded, session);
+        assert_eq!(loaded.windows[1].active, 1);
+    }
+
+    // A session written before windows existed must not lose its tabs.
+    #[test]
+    fn a_pre_windows_session_becomes_one_window() {
+        let path = file("upgrade");
+        crate::atomic::write(
+            &path,
+            "active = 1\n\n[[tabs]]\nentries = [\"https://a.example\"]\ncursor = 0\n\n\
+             [[tabs]]\nentries = [\"https://b.example\"]\ncursor = 0\n",
+        )
+        .unwrap();
+        let session = Session::load(&path).unwrap();
+        assert_eq!(session.windows.len(), 1);
+        assert_eq!(session.windows[0].tabs.len(), 2);
+        assert_eq!(session.windows[0].active, 1);
+        // And the old fields are not carried forward.
+        assert!(session.tabs.is_empty());
     }
 
     // Every one of these would panic at startup if the number were used
@@ -128,15 +221,15 @@ mod tests {
     fn out_of_range_indices_are_repaired_on_load() {
         let path = file("repair");
         Session {
-            tabs: vec![tab(&["https://a.example"], 99)],
-            active: 42,
+            windows: vec![window(vec![tab(&["https://a.example"], 99)], 42)],
+            ..Session::default()
         }
         .save(&path)
         .unwrap();
 
         let session = Session::load(&path).unwrap();
-        assert_eq!(session.tabs[0].cursor, 0);
-        assert_eq!(session.active, 0);
+        assert_eq!(session.windows[0].tabs[0].cursor, 0);
+        assert_eq!(session.windows[0].active, 0);
     }
 
     // A tab with no history has no URL to open, so it is not a tab.
@@ -144,38 +237,37 @@ mod tests {
     fn tabs_with_no_entries_are_dropped() {
         let path = file("empty-tab");
         Session {
-            tabs: vec![tab(&[], 0), tab(&["https://a.example"], 0)],
-            active: 1,
+            windows: vec![window(
+                vec![tab(&[], 0), tab(&["https://a.example"], 0)],
+                1,
+            )],
+            ..Session::default()
         }
         .save(&path)
         .unwrap();
 
         let session = Session::load(&path).unwrap();
-        assert_eq!(session.tabs.len(), 1);
-        assert_eq!(session.tabs[0].entries, ["https://a.example"]);
-        assert_eq!(session.active, 0);
+        assert_eq!(session.windows[0].tabs.len(), 1);
+        assert_eq!(session.windows[0].active, 0);
     }
 
     #[test]
-    fn an_oversized_session_is_truncated() {
-        let path = file("cap");
+    fn a_window_left_with_no_tabs_is_dropped() {
+        let path = file("empty-window");
         Session {
-            tabs: (0..MAX_TABS + 20)
-                .map(|i| SessionTab {
-                    entries: vec![format!("https://{i}.example")],
-                    cursor: 0,
-                })
-                .collect(),
-            active: MAX_TABS + 19,
+            windows: vec![
+                window(vec![tab(&[], 0)], 0),
+                window(vec![tab(&["https://a.example"], 0)], 0),
+            ],
+            ..Session::default()
         }
         .save(&path)
         .unwrap();
-
-        let session = Session::load(&path).unwrap();
-        assert_eq!(session.tabs.len(), MAX_TABS);
-        assert_eq!(session.active, MAX_TABS - 1);
+        assert_eq!(Session::load(&path).unwrap().windows.len(), 1);
     }
 
+    // The tab budget is shared, so windows cannot get around it between
+    // them.
     #[test]
     fn a_malformed_file_is_an_error() {
         let path = file("malformed");
@@ -184,14 +276,21 @@ mod tests {
     }
 
     #[test]
-    fn the_restore_shape_carries_every_tab_and_the_active_index() {
+    fn the_restore_shape_carries_every_window() {
         let session = Session {
-            tabs: vec![tab(&["https://a.example"], 0), tab(&["https://b.example"], 0)],
-            active: 1,
+            windows: vec![
+                window(vec![tab(&["https://a.example"], 0)], 0),
+                window(
+                    vec![tab(&["https://b.example"], 0), tab(&["https://c.example"], 0)],
+                    1,
+                ),
+            ],
+            ..Session::default()
         };
-        let (tabs, active) = session.to_restore_input();
-        assert_eq!(tabs.len(), 2);
-        assert_eq!(tabs[1].0, ["https://b.example"]);
-        assert_eq!(active, 1);
+        let restored = session.to_restore_input();
+        assert_eq!(restored.len(), 2);
+        assert_eq!(restored[1].0.len(), 2);
+        assert_eq!(restored[1].1, 1);
     }
+
 }

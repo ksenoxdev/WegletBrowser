@@ -1,0 +1,41 @@
+# Ad and tracker hosts, one per line. Blank lines and lines starting with
+# '#' are ignored; everything else is canonicalised on load, so case,
+# a trailing dot and the unicode form of a name all mean the same entry.
+#
+# A subdomain of a listed host is covered: listing doubleclick.net catches
+# stats.g.doubleclick.net too.
+#
+# Data, not code. This used to be a const array in blocklist.rs, which
+# meant updating the list was a recompile. It is compiled in with
+# include_str! -- Weglet makes no request the user did not ask for, so
+# there is nothing to fetch this from -- but a profile can override it
+# without a build: put your own blocklist.txt in the profile directory
+# and it replaces this one entirely.
+2mdn.net
+adnxs.com
+ads.microsoft.com
+adservice.google.com
+adservice.google.ru
+adsrvr.org
+amazon-adsystem.com
+app-measurement.com
+bat.bing.com
+clarity.ms
+connect.facebook.net
+criteo.com
+criteo.net
+doubleclick.net
+google-analytics.com
+googlesyndication.com
+googletagmanager.com
+googletagservices.com
+hotjar.com
+mc.yandex.ru
+metrika.yandex.ru
+pixel.facebook.com
+quantserve.com
+scorecardresearch.com
+segment.io
+taboola.com
+track.adform.net
+yandexadexchange.net

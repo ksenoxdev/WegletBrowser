@@ -1,73 +1,297 @@
-/* Copyright 2026 Weglet - Licensed under Apache 2.0 */
+/* Copyright 2026 Weglet - Licensed under Apache 2.0
+ *
+ * The blank-tab page: clock, search field, dock.
+ *
+ * The dock's lift and scale are NOT here -- they are computed per frame in
+ * newtab.ts from the magnifying strip, because a tile's size depends on how
+ * far the pointer is from it and CSS has no way to express that.
+ */
 
-.page {
+body {
+  display: flex;
+  justify-content: center;
+  padding: var(--layout-hero-padding-top) var(--space-xl);
+}
+
+.hero {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: var(--space-3xl);
-  min-height: 100%;
-  padding: var(--space-3xl);
+  gap: var(--layout-hero-gap);
+  width: 100%;
 }
 
-.wordmark {
-  margin: 0;
-  font-size: var(--font-size-xl);
+.clock {
+  font-family: "Outfit", sans-serif;
   font-weight: var(--font-weight-bold);
-  letter-spacing: 0.02em;
-  color: var(--color-text);
+  font-size: var(--layout-clock-size);
+  /* Negative tracking: at this size the default spacing reads as gappy. */
+  letter-spacing: -2px;
 }
 
-.dock {
-  display: grid;
-  /* Column count is a token, so the grid and the tile cap cannot disagree. */
-  grid-template-columns: repeat(var(--layout-dock-columns), minmax(0, 1fr));
+/* Registered so the conic gradient's angle can be animated at all -- a
+   plain custom property is a string to the animation engine and would jump
+   from 0deg to 360deg in one step. */
+@property --neon-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.search-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-lg);
+  width: 100%;
+  max-width: var(--layout-search-max-width);
+}
+
+.search-form {
+  position: relative;
+  align-self: stretch;
+  width: 100%;
+  /* Overshoots slightly past 1 and settles back: the field leans towards the
+     user when they click into it. */
+  transition: transform var(--motion-search-focus) cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+.search-form.focused {
+  transform: scale(1.015);
+}
+
+/* A spinning conic gradient masked down to a thin ring around the pill. The
+   two masks are xor'd so only the 2px padding band survives -- painting a
+   gradient and then punching out the middle is the only way to get a
+   gradient border. */
+.search-form::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: var(--radius-pill);
+  padding: 2px;
+  background: conic-gradient(
+    from var(--neon-angle),
+    transparent 0deg,
+    var(--color-ring) 16deg,
+    var(--color-ring) 64deg,
+    transparent 80deg
+  );
+  /* #000 here is not a colour: a mask reads only alpha, so this means
+     "fully opaque". There is no token for it because there is nothing to
+     theme. */
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-neon-fade);
+}
+
+.search-form.focused::after {
+  opacity: 1;
+}
+
+/* One lap, fast at the start and easing out at the end. */
+.search-form.neon-play::after {
+  animation: neon-sweep var(--motion-neon-sweep) cubic-bezier(0.12, 0.8, 0.25, 1)
+    forwards;
+}
+
+/* Swapped in by newtab.ts once that lap finishes: a slow even drift for as
+   long as the field keeps focus. Two animations rather than one because the
+   arrival should be noticed and the idle state should not. */
+.search-form.neon-drift::after {
+  animation: neon-sweep var(--motion-neon-drift) linear infinite;
+}
+
+@keyframes neon-sweep {
+  from {
+    --neon-angle: 0deg;
+  }
+  to {
+    --neon-angle: 360deg;
+  }
+}
+
+.search-bar {
+  width: 100%;
+  height: var(--layout-search-height);
+  background: var(--color-field);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  color: var(--color-text);
+  font-family: "Instrument Sans", sans-serif;
+  font-size: var(--layout-search-font);
+  /* Right padding leaves room for the engine mark. */
+  padding: 0 56px 0 var(--space-xxl);
+  outline: none;
+  position: relative;
+  -webkit-user-select: text;
+  user-select: text;
+  transition: border-color 200ms, box-shadow 200ms;
+}
+
+.search-bar::placeholder {
+  color: var(--color-text-dim);
+}
+
+.search-bar:focus {
+  border-color: var(--color-ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-ring) 30%, transparent);
+}
+
+.engine-mark {
+  position: absolute;
+  right: 22px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: var(--space-xxl);
+  height: var(--space-xxl);
+  color: var(--color-text-dim);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hint {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-dim);
+}
+
+.dock-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: var(--space-lg);
 }
 
-.tile {
+.dock {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  padding: var(--space-lg) var(--space-xl);
+  min-height: var(--layout-dock-min-height);
+  display: flex;
+  align-items: center;
+}
+
+/* align-items: flex-end, so a tile that grows under the pointer grows
+   upwards from a shared baseline rather than about its own centre. */
+.dock-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-sm);
+  min-height: var(--layout-dock-row-min-height);
+}
+
+.dock-slot {
+  width: var(--layout-dock-slot);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-md);
-  width: var(--layout-tab-max-width);
-  padding: var(--space-lg);
+  justify-content: flex-end;
+  position: relative;
+}
+
+.dock-tile {
+  width: var(--layout-dock-tile);
+  height: var(--layout-dock-tile);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface-raised);
-  transition: border-color var(--motion-fast) ease,
-    background var(--motion-fast) ease;
-}
-
-.tile:hover {
-  border-color: var(--color-border-strong);
-  background: var(--color-surface-raised);
-}
-
-.tile-badge {
-  display: grid;
-  place-items: center;
-  width: var(--space-3xl);
-  height: var(--space-3xl);
-  border-radius: var(--radius-pill);
-  background: var(--color-accent);
-  color: var(--color-accent-text);
-  font-size: var(--font-size-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-display);
   font-weight: var(--font-weight-bold);
+  font-family: "Outfit", sans-serif;
+  color: var(--color-text);
+  cursor: pointer;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
+  /* Bottom, so scaling lifts the tile off the dock instead of sinking it
+     into it. */
+  transform-origin: center bottom;
+  overflow: hidden;
 }
 
-.tile-title {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+@keyframes dock-bounce {
+  0% {
+    transform: scale(1) translateY(0);
+  }
+  30% {
+    transform: scale(1.12) translateY(-16px);
+  }
+  55% {
+    transform: scale(1) translateY(0);
+  }
+  75% {
+    transform: scale(1.04) translateY(-5px);
+  }
+  100% {
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Overshoot, settle, small second hop: the tile acknowledges the click with
+   weight rather than a flash. */
+.dock-tile.bounce {
+  animation: dock-bounce var(--motion-dock-bounce)
+    cubic-bezier(0.28, 0.84, 0.42, 1);
+}
+
+/* The dock's own tooltip, above the slot rather than below like the
+   toolbar's -- there is nothing under the dock to point at. Uses the
+   attribute so there is no element per tile. */
+.dock-slot::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 14px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  padding: 5px 10px;
+  border-radius: var(--radius-tooltip);
+  font-size: var(--font-size-xs);
+  color: var(--color-text);
   white-space: nowrap;
-  color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-dock-tip), transform var(--motion-dock-tip);
+}
+
+.dock-slot:hover::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.dock-tile-mark {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+}
+
+/* Dashed and hollow: it is an invitation, not a site. */
+.dock-tile.add {
+  background: transparent;
+  border: 1.5px dashed var(--color-border-strong);
+  color: var(--color-text-dim);
+  box-shadow: none;
+}
+
+.dock-tile.add:hover {
+  border-color: var(--color-ring);
+  color: var(--color-text);
 }
 
 .empty {
   margin: 0;
-  color: var(--color-text-faint);
-  font-size: var(--font-size-sm);
+  color: var(--color-text-dim);
+  font-size: var(--font-size-xs);
   text-align: center;
 }

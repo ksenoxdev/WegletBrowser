@@ -1,30 +1,86 @@
 <!DOCTYPE html>
-<!-- Copyright 2026 Weglet - Licensed under Apache 2.0 -->
-<html>
+<!-- Copyright 2026 Weglet - Licensed under Apache 2.0
+
+     The blank-tab page. Structure only: the clock, the dock and the neon
+     ring are driven by newtab.ts.
+-->
+<html lang="en">
   <head>
     <meta charset="utf-8" />
-    <!-- Nothing loads from the network. This page has no reason to reach
-         off the machine, and saying so here means a future mistake fails
-         loudly instead of quietly phoning home. -->
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; form-action 'none'; base-uri 'none'"
-    />
     <title>New Tab</title>
     <link rel="stylesheet" href="tokens.css" />
     <link rel="stylesheet" href="base.css" />
+    <link rel="stylesheet" href="modal.css" />
     <link rel="stylesheet" href="newtab.css" />
   </head>
   <body>
-    <main class="page">
-      <h1 class="wordmark">Weglet</h1>
-      <!-- The list is built by newtab.ts; a heading here keeps the region
-           announced even while it is empty. -->
-      <section aria-labelledby="dock-heading">
+    <main class="hero">
+      <!-- Placeholder, not an empty node: the first paint happens before the
+           script runs, and a collapsing element would shift the layout. -->
+      <div class="clock" id="clock" aria-live="off">--:--</div>
+
+      <div class="search-wrap">
+        <!-- A div, not a form: a form would submit and reload the page.
+             Enter is handled in newtab.ts. -->
+        <div class="search-form" id="search-form">
+          <input
+            class="search-bar"
+            id="search-bar"
+            type="text"
+            placeholder="Search or enter address"
+            autocomplete="off"
+            spellcheck="false"
+            aria-label="Search or enter address"
+            autofocus
+          />
+          <span class="engine-mark" id="engine-mark" aria-hidden="true"></span>
+        </div>
+        <div class="hint" id="hint"></div>
+      </div>
+
+      <section class="dock-wrap" aria-labelledby="dock-heading">
         <h2 id="dock-heading" class="visually-hidden">Pinned sites</h2>
-        <div id="dock" class="dock"></div>
+        <div class="dock">
+          <div class="dock-row" id="dock"></div>
+        </div>
       </section>
     </main>
+
+    <div class="context-menu" id="shortcut-menu" role="menu">
+      <div class="context-menu-item" id="menu-edit" role="menuitem" tabindex="-1">
+        Edit
+      </div>
+      <div
+        class="context-menu-item danger"
+        id="menu-delete"
+        role="menuitem"
+        tabindex="-1"
+      >
+        Delete
+      </div>
+    </div>
+
+    <div class="modal-backdrop" id="shortcut-backdrop">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <h2 id="modal-title">Add shortcut</h2>
+        <label>
+          Name
+          <input id="shortcut-name" type="text" placeholder="My Site" autocomplete="off" />
+        </label>
+        <label>
+          Link
+          <input id="shortcut-url" type="text" placeholder="example.com" autocomplete="off" />
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="modal-btn cancel" id="shortcut-cancel">
+            Cancel
+          </button>
+          <button type="button" class="modal-btn confirm" id="shortcut-confirm">
+            Add
+          </button>
+        </div>
+      </div>
+    </div>
     <script type="module" src="newtab.js"></script>
   </body>
 </html>

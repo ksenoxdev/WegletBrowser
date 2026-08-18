@@ -6,14 +6,10 @@
 #define WEGLET_BROWSER_WEGLET_CONTENT_BROWSER_CLIENT_H_
 
 #include <memory>
-#include <optional>
 #include <string>
 
 #include "base/memory/raw_ptr.h"
 #include "content/public/browser/content_browser_client.h"
-#include "content/public/browser/frame_tree_node_id.h"
-#include "mojo/public/cpp/bindings/pending_remote.h"
-#include "services/network/public/mojom/url_loader_factory.mojom-forward.h"
 
 namespace weglet {
 
@@ -40,23 +36,16 @@ class WegletContentBrowserClient : public content::ContentBrowserClient {
   blink::UserAgentMetadata GetUserAgentMetadata() override;
   std::string GetProduct() override;
 
-  // Hands the engine a factory for weglet:// so a navigation to one of our
-  // pages is served from the binary rather than attempted over the network.
-  // Returns an unbound remote for any other scheme, which is how the base
-  // class says "not mine".
-  mojo::PendingRemote<network::mojom::URLLoaderFactory>
-  CreateNonNetworkNavigationURLLoaderFactory(
-      const std::string& scheme,
-      content::FrameTreeNodeId frame_tree_node_id) override;
+  // Where the block list and the risk heuristics actually take effect --
+  // content's own hook, so no patch to the Chromium tree. This is the one
+  // point that sees a redirect, which is exactly the case a shortened
+  // link resolving to a lookalike arrives as.
+  void CreateThrottlesForNavigation(
+      content::NavigationThrottleRegistry& registry) override;
 
-  // And everything the page then asks for: its stylesheet and its module
-  // scripts. Registering only the navigation factory gives a page that
-  // loads and then renders unstyled with no scripts.
-  void RegisterNonNetworkSubresourceURLLoaderFactories(
-      int render_process_id,
-      int render_frame_id,
-      const std::optional<url::Origin>& request_initiator_origin,
-      NonNetworkURLLoaderFactoryMap* factories) override;
+  // Weglet's pages are chrome://weglet/, served by a WebUIDataSource -- see
+  // weglet_web_ui_data_source.h -- so there is no scheme of our own to
+  // register a loader factory for.
 
  private:
   // Owned by the content layer, which outlives this client.

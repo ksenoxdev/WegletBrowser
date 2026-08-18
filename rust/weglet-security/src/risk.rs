@@ -7,11 +7,12 @@
 //
 // These heuristics are advisory. They are wrong in both directions and
 // nothing else in the browser depends on them being right -- see
-// docs/SECURITY_MODEL.md. Their measured false-positive and
+// docs/security.md. Their measured false-positive and
 // false-negative rates live in tests/corpus.rs; change a rule here and
 // that test says what it cost.
 
 use std::collections::HashSet;
+use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RiskLevel {
@@ -27,147 +28,99 @@ pub struct NavigationRisk {
     pub normalized_host: Option<String>,
 }
 
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
 struct BrandRule {
-    display_name: &'static str,
+    #[serde(rename = "name")]
+    display_name: String,
     // A label that IS the brand wherever it sits in front of a public
     // suffix: google.com, google.co.nz, google.de and the ~190 other
     // country domains are all Google's, and hand-listing them was how
     // blog.google and github.dev ended up blocked.
-    official_labels: &'static [&'static str],
+    #[serde(rename = "labels", default)]
+    official_labels: Vec<String>,
     // Registrable domains the brand owns whose own label is not one of
     // the labels above.
-    official_domains: &'static [&'static str],
+    #[serde(rename = "domains", default)]
+    official_domains: Vec<String>,
     // What an impostor imitates.
-    tokens: &'static [&'static str],
+    #[serde(default)]
+    tokens: Vec<String>,
 }
 
-const BRAND_RULES: &[BrandRule] = &[
-    BrandRule {
-        display_name: "Telegram",
-        official_labels: &["telegram"],
-        official_domains: &["t.me", "telesco.pe"],
-        tokens: &["telegram"],
-    },
-    BrandRule {
-        display_name: "Google",
-        official_labels: &["google", "gmail", "youtube", "googleapis", "gstatic"],
-        official_domains: &[
-            "googleusercontent.com",
-            "googlesource.com",
-            "googleblog.com",
-            "youtu.be",
-            "youtube-nocookie.com",
-            "withgoogle.com",
-            "goo.gl",
-            "g.co",
-        ],
-        tokens: &["google", "gmail", "youtube"],
-    },
-    BrandRule {
-        display_name: "Microsoft",
-        official_labels: &["microsoft", "outlook", "office", "office365", "onedrive"],
-        official_domains: &[
-            "live.com",
-            "microsoftonline.com",
-            "sharepoint.com",
-            "msn.com",
-            "azure.com",
-            "windows.net",
-            "msedge.net",
-            "visualstudio.com",
-        ],
-        tokens: &["microsoft", "outlook", "office365", "onedrive"],
-    },
-    BrandRule {
-        display_name: "Apple/iCloud",
-        official_labels: &["apple", "icloud"],
-        official_domains: &["apple.news", "cdn-apple.com", "mzstatic.com"],
-        tokens: &["icloud", "appleid", "apple"],
-    },
-    BrandRule {
-        display_name: "Facebook",
-        official_labels: &["facebook", "fbcdn"],
-        official_domains: &["fb.com", "fb.me", "fb.watch", "meta.com"],
-        tokens: &["facebook"],
-    },
-    BrandRule {
-        display_name: "Instagram",
-        official_labels: &["instagram", "cdninstagram"],
-        official_domains: &["instagr.am"],
-        tokens: &["instagram"],
-    },
-    BrandRule {
-        display_name: "WhatsApp",
-        official_labels: &["whatsapp"],
-        official_domains: &["wa.me"],
-        tokens: &["whatsapp"],
-    },
-    BrandRule {
-        display_name: "Discord",
-        official_labels: &["discord", "discordapp"],
-        official_domains: &["discord.gg", "dis.gd"],
-        tokens: &["discord"],
-    },
-    BrandRule {
-        display_name: "GitHub",
-        official_labels: &["github", "githubusercontent", "githubassets"],
-        official_domains: &["ghcr.io", "github.blog"],
-        tokens: &["github"],
-    },
-    BrandRule {
-        display_name: "Steam",
-        official_labels: &["steampowered", "steamcommunity", "steamstatic"],
-        official_domains: &["valvesoftware.com"],
-        tokens: &["steampowered", "steamcommunity"],
-    },
-    BrandRule {
-        display_name: "Roblox",
-        official_labels: &["roblox", "rbxcdn"],
-        official_domains: &[],
-        tokens: &["roblox"],
-    },
-    BrandRule {
-        display_name: "Binance",
-        official_labels: &["binance"],
-        official_domains: &["bnbchain.org"],
-        tokens: &["binance"],
-    },
-    BrandRule {
-        display_name: "PayPal",
-        official_labels: &["paypal", "paypalobjects"],
-        official_domains: &["paypal.me"],
-        tokens: &["paypal"],
-    },
-];
+#[derive(Debug, serde::Deserialize)]
+struct BrandFile {
+    #[serde(default)]
+    brand: Vec<BrandRule>,
+}
+
+// The brands, as data. See data/brands.toml for the format.
+//
+// include_str! rather than a file read at startup: Weglet ships one
+// executable and nothing beside it. What this buys over the const array
+// it replaces is that adding a brand is editing a table, not editing Rust
+// and rebuilding -- and that a profile can supply its own.
+const BUILT_IN_BRANDS: &str = include_str!("../data/brands.toml");
+
+static BRAND_OVERRIDE: OnceLock<Vec<BrandRule>> = OnceLock::new();
+
+// Installs rules read from the profile, replacing the built-in set.
+// Malformed input is rejected and reported rather than partly applied:
+// half a rule set is a browser that blocks some impostors and waves
+// others through, with nothing to say which.
+pub fn set_brand_rules_override(text: &str) -> Result<(), String> {
+    let parsed = parse_brands(text)?;
+    let _ = BRAND_OVERRIDE.set(parsed);
+    Ok(())
+}
+
+fn parse_brands(text: &str) -> Result<Vec<BrandRule>, String> {
+    toml::from_str::<BrandFile>(text)
+        .map(|file| file.brand)
+        .map_err(|error| error.to_string())
+}
+
+fn brand_rules() -> &'static [BrandRule] {
+    if let Some(overridden) = BRAND_OVERRIDE.get() {
+        return overridden;
+    }
+    static RULES: OnceLock<Vec<BrandRule>> = OnceLock::new();
+    RULES.get_or_init(|| {
+        // The built-in file is checked by a test in this crate, so a
+        // malformed one fails the build rather than the browser.
+        parse_brands(BUILT_IN_BRANDS).unwrap_or_default()
+    })
+}
+
 
 // Matched against whole words rather than as substrings: "auth" inside
 // "authority" and "live" inside "livestream" are not signals, and
 // treating them as such was most of the noise this list produced.
-const SENSITIVE_WORDS: &[&str] = &[
-    "account",
-    "appeal",
-    "auth",
-    "bank",
-    "billing",
-    "confirm",
-    "credential",
-    "login",
-    "logon",
-    "password",
-    "payment",
-    "recovery",
-    "reset",
-    "secure",
-    "seed",
-    "signin",
-    "unlock",
-    "verification",
-    "verify",
-    "wallet",
-    "2fa",
-    "otp",
-    "mfa",
-];
+// The words, as data. One per line; see data/sensitive_words.txt.
+const BUILT_IN_SENSITIVE_WORDS: &str = include_str!("../data/sensitive_words.txt");
+
+static WORD_OVERRIDE: OnceLock<Vec<String>> = OnceLock::new();
+
+pub fn set_sensitive_words_override(text: &str) {
+    let _ = WORD_OVERRIDE.set(parse_word_list(text));
+}
+
+fn parse_word_list(text: &str) -> Vec<String> {
+    text.lines()
+        .map(|line| line.split('#').next().unwrap_or("").trim())
+        .filter(|line| !line.is_empty())
+        .map(str::to_lowercase)
+        .collect()
+}
+
+fn sensitive_words() -> &'static [String] {
+    if let Some(overridden) = WORD_OVERRIDE.get() {
+        return overridden;
+    }
+    static WORDS: OnceLock<Vec<String>> = OnceLock::new();
+    WORDS.get_or_init(|| parse_word_list(BUILT_IN_SENSITIVE_WORDS))
+}
+
 
 // What the rest of the name says when a brand is embedded in it. On
 // their own these mean nothing -- "applebees" and "microsoftware" are
@@ -499,17 +452,20 @@ fn find_brand_impersonation(
     let own_ascii = ascii_labels.get(own_index).copied().unwrap_or_default();
 
     // It is the brand. Stop before any impersonation rule runs.
-    for rule in BRAND_RULES {
-        if rule.official_labels.contains(&own_ascii)
-            || rule.official_domains.contains(&registrable.as_str())
+    for rule in brand_rules() {
+        if rule.official_labels.iter().any(|label| label == own_ascii)
+            || rule
+                .official_domains
+                .iter()
+                .any(|domain| domain == &registrable)
         {
             return None;
         }
     }
 
-    for rule in BRAND_RULES {
+    for rule in brand_rules() {
         let mut matched = None;
-        for token in rule.tokens {
+        for token in rule.tokens.iter().map(String::as_str) {
             // Typosquat or homoglyph of the name itself: gooogle,
             // faceb00k, or U+0430 U+0440 U+0440 U+04CF U+0435 -- five Cyrillic
             // letters that read as "apple". Strongest signal there is.
@@ -664,9 +620,11 @@ fn has_sensitive_word(host: &str, path: &str, query: &str) -> bool {
             words.insert(word.to_string());
         }
     }
-    SENSITIVE_WORDS
+    sensitive_words()
         .iter()
-        .any(|sensitive| words.contains(*sensitive) || words.contains(&format!("{sensitive}s")))
+        .any(|sensitive| {
+            words.contains(sensitive.as_str()) || words.contains(&format!("{sensitive}s"))
+        })
 }
 
 // Latin mixed with Cyrillic, Greek or Armenian inside one label.
@@ -847,6 +805,45 @@ fn warn(title: &str, reason: &str, host: String) -> NavigationRisk {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // The data files are compiled in, so a malformed one is a browser
+    // that starts with no rules rather than a build that fails. These
+    // are what make it a build failure.
+    #[test]
+    fn the_built_in_brand_table_parses() {
+        let rules = parse_brands(BUILT_IN_BRANDS).expect("data/brands.toml");
+        assert!(!rules.is_empty());
+        for rule in &rules {
+            assert!(!rule.display_name.is_empty());
+            // A brand with no tokens can never match anything, so it is a
+            // rule that silently does nothing.
+            assert!(!rule.tokens.is_empty(), "{} has no tokens", rule.display_name);
+            // And one with nothing official cannot tell the real site
+            // from an impostor, so it would flag the brand itself.
+            assert!(
+                !rule.official_labels.is_empty() || !rule.official_domains.is_empty(),
+                "{} has nothing official",
+                rule.display_name
+            );
+        }
+    }
+
+    #[test]
+    fn the_built_in_word_list_parses() {
+        let words = parse_word_list(BUILT_IN_SENSITIVE_WORDS);
+        assert!(!words.is_empty());
+        // Lowercased on load: the labels they are compared against are.
+        assert!(words.iter().all(|word| word == &word.to_lowercase()));
+        assert!(words.iter().all(|word| !word.starts_with('#')));
+    }
+
+    #[test]
+    fn a_malformed_brand_override_is_rejected_whole() {
+        // Half a rule set is a browser that catches some impostors and
+        // waves others through, with nothing to say which.
+        assert!(parse_brands("[[brand]]\nname = ").is_err());
+        assert!(parse_brands("not toml at all = = =").is_err());
+    }
 
     fn risk(url: &str) -> Option<NavigationRisk> {
         assess_navigation(url)

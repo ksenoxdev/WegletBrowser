@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<!-- Copyright 2026 Weglet - Licensed under Apache 2.0
+
+     Four panels behind a segmented switcher. Structure only; the controls are
+     filled in and wired by settings.ts.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Settings</title>
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="base.css" />
+    <link rel="stylesheet" href="settings.css" />
+  </head>
+  <body>
+    <div class="page">
+      <div class="header">
+        <h1>Settings</h1>
+        <button class="done" id="done">Done</button>
+      </div>
+
+      <!-- A tablist, and the panels below are its tabpanels. The switcher
+           looks like a segmented control, but to a screen reader it is the
+           same thing a tab strip is. -->
+      <div class="switcher" id="switcher" role="tablist" aria-label="Settings sections">
+        <div class="switcher-pill" id="switcher-pill" aria-hidden="true"></div>
+        <div class="switcher-tab active" id="tab-search" data-panel="search" role="tab" tabindex="0">
+          Search
+        </div>
+        <div class="switcher-tab" id="tab-general" data-panel="general" role="tab" tabindex="0">
+          General
+        </div>
+        <div class="switcher-tab" id="tab-security" data-panel="security" role="tab" tabindex="0">
+          Security
+        </div>
+        <div class="switcher-tab" id="tab-appearance" data-panel="appearance" role="tab" tabindex="0">
+          Appearance
+        </div>
+      </div>
+
+      <div class="panel" data-panel="search" role="tabpanel" aria-labelledby="tab-search">
+        <div class="panel-heading">Default engine</div>
+        <div class="panel-hint">Used when what you type is not an address.</div>
+        <div class="engine-choice" id="engine-choice"></div>
+        <div class="custom-engine-row" id="custom-engine-row" hidden>
+          <div class="panel-hint">
+            URL template &mdash; <code>%s</code> is replaced with your search,
+            e.g. <code>https://example.com/search?q=%s</code>
+          </div>
+          <input
+            class="custom-engine-input"
+            id="custom-engine-input"
+            type="text"
+            placeholder="https://example.com/search?q=%s"
+            autocomplete="off"
+            spellcheck="false"
+            aria-label="Custom search URL template"
+          />
+        </div>
+      </div>
+
+      <div class="panel" data-panel="general" role="tabpanel" aria-labelledby="tab-general" hidden>
+        <div class="toggle-row">
+          <div class="toggle-text">
+            <div class="panel-heading" id="restore-label">Reopen previous tabs</div>
+            <div class="panel-hint">
+              Restores the tabs that were open when the browser last closed.
+            </div>
+          </div>
+          <div
+            class="toggle"
+            id="restore-session-toggle"
+            role="switch"
+            tabindex="0"
+            aria-labelledby="restore-label"
+          ></div>
+        </div>
+
+        <div class="panel-heading section-gap">Browsing data</div>
+        <div class="panel-hint">
+          Clears cookies, cache, and site storage for every site. This does not
+          affect your saved shortcuts or settings.
+        </div>
+        <button class="clear-data-btn" id="clear-data-btn">Clear browsing data</button>
+      </div>
+
+      <div class="panel" data-panel="security" role="tabpanel" aria-labelledby="tab-security" hidden>
+        <div class="toggle-row">
+          <div class="toggle-text">
+            <div class="panel-heading" id="phishing-label">Phishing protection</div>
+            <div class="panel-hint" id="threat-feed-status">
+              Checks sites against a community list of known phishing
+              addresses.
+            </div>
+          </div>
+          <div
+            class="toggle"
+            id="threat-feed-toggle"
+            role="switch"
+            tabindex="0"
+            aria-labelledby="phishing-label"
+          ></div>
+        </div>
+        <div class="threat-feed-actions">
+          <button class="refresh-btn" id="refresh-threat-feed-btn">Refresh now</button>
+        </div>
+
+        <div class="panel-heading section-gap">Blocked sites</div>
+        <div class="panel-hint">
+          Sites you've blocked won't load at all, on this device only.
+        </div>
+        <div class="block-host-row">
+          <input
+            class="block-host-input"
+            id="block-host-input"
+            type="text"
+            placeholder="example.com"
+            autocomplete="off"
+            spellcheck="false"
+            aria-label="Site to block"
+          />
+          <button class="block-host-btn" id="block-host-btn">Block</button>
+        </div>
+        <div class="blocked-hosts-list" id="blocked-hosts-list"></div>
+      </div>
+
+      <div class="panel" data-panel="appearance" role="tabpanel" aria-labelledby="tab-appearance" hidden>
+        <div class="panel-heading">Accent color</div>
+        <div class="panel-hint">
+          Applies everywhere &mdash; the toolbar, buttons, and links throughout
+          Weglet.
+        </div>
+        <div class="color-preset-row" id="color-preset-row"></div>
+        <div class="hex-row">
+          <div class="hex-swatch" id="hex-swatch" aria-hidden="true"></div>
+          <input
+            class="hex-input"
+            id="hex-input"
+            type="text"
+            placeholder="#A855F7"
+            autocomplete="off"
+            spellcheck="false"
+            maxlength="7"
+            aria-label="Accent colour, hex"
+          />
+          <button class="reset-color-btn" id="reset-color-btn">Reset to default</button>
+        </div>
+
+        <div class="panel-heading section-gap">Address bar shape</div>
+        <div class="shape-choice" id="shape-choice">
+          <button class="shape-option" data-shape="pill">Pill</button>
+          <button class="shape-option" data-shape="rounded">Rounded</button>
+          <button class="shape-option" data-shape="square">Square</button>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="settings.js"></script>
+  </body>
+</html>

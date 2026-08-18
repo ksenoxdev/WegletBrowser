@@ -13,9 +13,14 @@ include_rules = [
   "+content/public/common",
   "+content/public/renderer",
   "+net",
+  "+services/network/public/mojom",
   "+sandbox",
   "+ui/aura",
   "+ui/base",
+  # Keyboard codes, for the accelerators the window registers. Public UI
+  # headers like everything else here: nothing under ui/events/blink or
+  # any other internal path.
+  "+ui/events/keycodes",
   "+ui/display",
   "+ui/gfx",
   "+ui/views",

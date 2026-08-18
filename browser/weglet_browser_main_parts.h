@@ -7,9 +7,9 @@
 
 #include <memory>
 
+#include "base/timer/timer.h"
 #include "build/build_config.h"
 #include "content/public/browser/browser_main_parts.h"
-#include "url/gurl.h"
 
 #if defined(USE_AURA)
 namespace display {
@@ -25,6 +25,7 @@ class WMState;
 
 namespace weglet {
 
+class WegletBridge;
 class WegletBrowserContext;
 
 // Runs only in the browser process, and only once. This is where the
@@ -37,6 +38,7 @@ class WegletBrowserMainParts : public content::BrowserMainParts {
   ~WegletBrowserMainParts() override;
 
   WegletBrowserContext* browser_context() { return browser_context_.get(); }
+  WegletBridge* bridge() { return bridge_.get(); }
 
   // content::BrowserMainParts:
   int PreMainMessageLoopRun() override;
@@ -45,11 +47,26 @@ class WegletBrowserMainParts : public content::BrowserMainParts {
   void PostMainMessageLoopRun() override;
 
  private:
-  // The URL to open at startup: --url=... if given, otherwise a blank
-  // page. A real home page arrives with the settings bridge in phase 2.
-  static GURL StartupURL();
-
   std::unique_ptr<WegletBrowserContext> browser_context_;
+
+  // The browser's own model -- tabs, history, settings, security -- living
+  // in Rust. Created before the window, which reads it to know what to open,
+  // and destroyed after it.
+  std::unique_ptr<WegletBridge> bridge_;
+
+  // Settings changes are marked in the model rather than written, so the
+  // fsync an atomic write ends in does not land on the UI thread inside
+  // the click that made the change. This is what actually writes them.
+  // Cheap and a no-op when nothing changed.
+  base::RepeatingTimer settings_flush_timer_;
+
+  // The session used to be written only in PostMainMessageLoopRun, so a
+  // crash or a kill lost every open tab -- while restore-session defaults
+  // to on, which is a promise kept only on a clean exit.
+  base::RepeatingTimer session_save_timer_;
+
+  void FlushSettings();
+  void SaveSession();
 
 #if defined(USE_AURA)
   // Aura needs all three before any Widget can be created, and they

@@ -74,3 +74,17 @@ export function byId<T extends HTMLElement>(id: string): T {
   }
   return node as T;
 }
+
+// Runs a page's main() and reports a failure instead of letting it kill the
+// whole module silently. byId throws on a missing element -- deliberately,
+// so a mismatch between the markup and the script is loud during
+// development -- but an uncaught exception in a module stops that page's
+// entire script, not just the one control that was missing. One typo in an
+// id should not mean the whole toolbar stops responding.
+export function runPage(main: () => void): void {
+  try {
+    main();
+  } catch (error) {
+    console.error("weglet: page script failed to start", error);
+  }
+}

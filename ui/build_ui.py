@@ -7,7 +7,8 @@
 #
 # Three steps, in order:
 #   1. generate_tokens.py turns tokens.json into CSS, TypeScript and a
-#      C++ header.
+#      C++ header. The CSS carries the @font-face rules; the font files
+#      themselves are embedded in step 3 alongside the pages.
 #   2. Chromium's vendored TypeScript compiles src/*.ts to ES modules.
 #      Vendored, so there is no npm install and no node_modules here.
 #   3. The pages, styles and compiled scripts are written into a generated
@@ -24,6 +25,11 @@ import os
 import subprocess
 import sys
 
+# weglet/build_support.py -- find_node_toolchain and write_depfile, which
+# every build script here needs and which used to exist twice.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import build_support  # noqa: E402
+
 # Extension -> what the protocol handler should answer with. A file whose
 # type is not here is a mistake rather than something to serve as bytes:
 # guessing a MIME type is how a page ends up rendered as plain text.
@@ -34,6 +40,10 @@ MIME_TYPES = {
     ".json": "application/json",
     ".svg": "image/svg+xml",
     ".png": "image/png",
+    # Only what the pages actually serve. .ttf is deliberately absent:
+    # content's own WebUIDataSourceImpl::GetMimeType has no entry for it
+    # and falls through to text/html, so a .ttf here would be embedded
+    # successfully and served as the wrong type. woff2 is in its table.
     ".woff2": "font/woff2",
 }
 
@@ -44,33 +54,9 @@ def run(command: list[str], cwd: str | None = None) -> None:
         raise SystemExit(result.returncode)
 
 
-def find_typescript(chromium_root: str) -> tuple[str, str]:
-    """Returns (node binary, tsc entry point) from Chromium's third_party."""
-    node_dir = os.path.join(chromium_root, "third_party", "node")
-    candidates = [
-        os.path.join(node_dir, "win", "node.exe"),
-        os.path.join(node_dir, "linux", "node-linux-x64", "bin", "node"),
-        os.path.join(node_dir, "mac", "node-darwin-x64", "bin", "node"),
-        os.path.join(node_dir, "mac", "node-darwin-arm64", "bin", "node"),
-    ]
-    node = next((path for path in candidates if os.path.exists(path)), None)
-
-    tsc = os.path.join(
-        node_dir, "node_modules", "typescript", "lib", "tsc.js"
-    )
-    if node is None or not os.path.exists(tsc):
-        raise SystemExit(
-            "Chromium's vendored node/TypeScript was not found under\n"
-            f"  {node_dir}\n"
-            "Run `gclient runhooks` -- it downloads both. Weglet does not\n"
-            "install its own copy on purpose: two toolchains would mean two\n"
-            "versions to keep in step.\n"
-        )
-    return node, tsc
-
 
 def compile_typescript(ui_dir: str, out_dir: str, chromium_root: str) -> None:
-    node, tsc = find_typescript(chromium_root)
+    node, tsc = build_support.find_node_toolchain(chromium_root)
     run(
         [
             node,
@@ -129,6 +115,7 @@ def embed(files: dict[str, bytes], header_out: str, source_out: str) -> None:
         '#include "weglet/ui/generated_resources.h"',
         "",
         "#include <algorithm>",
+        "#include <cstdint>",
         "",
         "namespace weglet::ui {",
         "namespace {",
@@ -141,9 +128,13 @@ def embed(files: dict[str, bytes], header_out: str, source_out: str) -> None:
         data = files[path]
         symbol = f"k{c_identifier(path)}"
         octets = ", ".join(f"0x{byte:02x}" for byte in data)
+        # uint8_t, not char: char is signed here, and a font file has bytes
+        # above 127 that do not fit in it -- which is a narrowing error, not
+        # a warning. Reinterpreted back to char at the string_view below,
+        # where the width is what matters and the sign is not.
         source += [
             f"// {path} ({len(data)} bytes)",
-            f"constexpr char {symbol}[] = {{{octets}}};",
+            f"constexpr uint8_t {symbol}[] = {{{octets}}};",
             "",
         ]
 
@@ -160,7 +151,8 @@ def embed(files: dict[str, bytes], header_out: str, source_out: str) -> None:
         symbol = f"k{c_identifier(path)}"
         source.append(
             f'    {{"{path}", "{mime}", '
-            f"std::string_view({symbol}, sizeof({symbol}))}},"
+            f"std::string_view(reinterpret_cast<const char*>({symbol}), "
+            f"sizeof({symbol}))}},"
         )
     source += [
         "};",
@@ -247,6 +239,27 @@ def main() -> int:
         ]
     )
 
+    # 1b. Contract: message names, page paths and internal addresses. The
+    #     TypeScript side (contract.ts) lands with the sources so
+    #     protocol.ts's import resolves, same as tokens.ts above. The C++
+    #     header lands in gen/ for the browser process; the Rust output is
+    #     not requested here at all -- weglet-core gets its own copy
+    #     through rust/build_rust.py, which runs independently of this
+    #     script and has to work under a plain `cargo build` with no GN
+    #     action having run first.
+    run(
+        [
+            sys.executable,
+            os.path.join(ui_dir, "generate_contract.py"),
+            "--contract",
+            os.path.join(ui_dir, "contract.json"),
+            "--ts",
+            os.path.join(ui_dir, "src", "contract.ts"),
+            "--header",
+            os.path.join(gen_dir, "generated_contract.h"),
+        ]
+    )
+
     # 2. TypeScript.
     compile_typescript(ui_dir, scripts_dir, os.path.abspath(args.chromium_root))
 
@@ -255,6 +268,7 @@ def main() -> int:
     files = collect(
         [
             os.path.join(ui_dir, "pages"),
+            os.path.join(ui_dir, "fonts"),
             os.path.join(gen_dir, "pages"),
             scripts_dir,
         ]
@@ -264,33 +278,17 @@ def main() -> int:
     embed(files, args.header, args.source)
 
     if args.depfile:
-        write_depfile(args.depfile, args.source, ui_dir)
+        # Every page, script, font and generator input: a change to any of
+        # them has to rebuild the embedded resource set.
+        build_support.write_depfile(
+            args.depfile,
+            args.source,
+            ui_dir,
+            lambda name: os.path.splitext(name)[1] in (*MIME_TYPES, ".ts", ".py")
+            or name in ("tokens.json", "tsconfig.json", "contract.json"),
+        )
     return 0
 
-
-def write_depfile(depfile: str, out: str, ui_dir: str) -> None:
-    """Lists every input so a change to any of them rebuilds.
-
-    Paths are relative to the build directory. An absolute Windows path
-    carries a drive-letter colon, and the depfile format uses the colon as
-    its one separator -- ninja rejects the whole file over it.
-    """
-    inputs = []
-    for root, dirs, names in os.walk(ui_dir):
-        dirs[:] = [d for d in dirs if d not in ("node_modules", "__pycache__")]
-        for name in names:
-            if os.path.splitext(name)[1] in (
-                *MIME_TYPES,
-                ".ts",
-                ".py",
-            ) or name in ("tokens.json", "tsconfig.json"):
-                inputs.append(os.path.join(root, name))
-
-    deps = " ".join(
-        os.path.relpath(path).replace("\\", "/") for path in sorted(inputs)
-    )
-    with open(depfile, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write(f"{out.replace(os.sep, '/')}: {deps}\n")
 
 
 if __name__ == "__main__":

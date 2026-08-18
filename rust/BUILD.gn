@@ -33,6 +33,15 @@ action("weglet_ffi_build") {
   # Not listed file by file: the depfile below is generated from the actual
   # sources, so adding a .rs file does not mean editing this list.
   inputs = [
+    # The shared build helpers both this and the other scripts import.
+    "//weglet/build_support.py",
+
+    # Compiled in with include_str!, so a change to one is a rebuild.
+    # The depfile lists .rs and the manifests; these are data.
+    "weglet-profile/data/engines.toml",
+    "weglet-security/data/blocklist.txt",
+    "weglet-security/data/brands.toml",
+    "weglet-security/data/sensitive_words.txt",
     "//weglet/rust/Cargo.toml",
     "//weglet/rust/Cargo.lock",
   ]

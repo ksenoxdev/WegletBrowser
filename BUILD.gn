@@ -7,6 +7,7 @@
 # clean and rebasing onto a new Chromium release is a fetch, not a merge.
 
 import("//build/config/ui.gni")
+import("//testing/test.gni")
 import("//tools/grit/repack.gni")
 
 executable("weglet") {
@@ -32,7 +33,23 @@ executable("weglet") {
     ]
   }
 
-  data_deps = [ ":weglet_pak" ]
+  data_deps = [
+    ":weglet_pak",
+
+    # Not a build input -- it produces nothing the binary uses. It is here
+    # so the comparison actually runs: a resource pack Chromium started
+    # expecting is otherwise found by a CHECK at startup.
+    ":check_pak",
+
+    # Says which Chromium tree this is. A warning by default -- see
+    # check_chromium_version.py.
+    ":check_chromium_version",
+
+    # Neither produces anything the binary uses; both are here so they
+    # actually run.
+    ":check_generators",
+    ":check_ui",
+  ]
 }
 
 source_set("weglet_lib") {
@@ -47,19 +64,32 @@ source_set("weglet_lib") {
     "browser/weglet_browser_main_parts.h",
     "browser/weglet_content_browser_client.cc",
     "browser/weglet_content_browser_client.h",
-    "browser/weglet_url_loader_factory.cc",
-    "browser/weglet_url_loader_factory.h",
+    "browser/weglet_message_handler.cc",
+    "browser/weglet_message_handler.h",
+    "browser/weglet_navigation_throttle.cc",
+    "browser/weglet_navigation_throttle.h",
+    "browser/weglet_security_guard.cc",
+    "browser/weglet_security_guard.h",
+    "browser/weglet_state_service.cc",
+    "browser/weglet_state_service.h",
+    "browser/weglet_tab_observer.cc",
+    "browser/weglet_tab_observer.h",
+    "browser/weglet_web_ui_controller_factory.cc",
+    "browser/weglet_web_ui_controller_factory.h",
+    "browser/weglet_web_ui_data_source.cc",
+    "browser/weglet_web_ui_data_source.h",
     "browser/weglet_window.cc",
     "browser/weglet_window.h",
     "common/weglet_content_client.cc",
     "common/weglet_content_client.h",
+    "common/weglet_host.h",
     "renderer/weglet_content_renderer_client.cc",
     "renderer/weglet_content_renderer_client.h",
   ]
 
   deps = [
-    # The interface: design tokens, TypeScript, and the pages embedded in
-    # the binary -- see ui/BUILD.gn.
+    # The interface: design tokens, TypeScript, and the pages embedded in the
+    # binary -- see ui/BUILD.gn.
     "ui",
 
     # The browser's own logic: tabs, history, omnibox, profile, security.
@@ -70,10 +100,7 @@ source_set("weglet_lib") {
     "//content/public/browser",
     "//content/public/common",
     "//content/public/renderer",
-    "//mojo/public/cpp/bindings",
     "//net",
-    "//services/network/public/cpp",
-    "//services/network/public/mojom",
     "//ui/base",
     "//ui/display",
     "//url",
@@ -91,6 +118,110 @@ source_set("weglet_lib") {
       "//ui/wm/public",
     ]
   }
+}
+
+# Unit tests. Run with: ninja -C out/Default weglet_unittests &&
+# out/Default/weglet_unittests
+#
+# The generated contract is checked from the side that consumes it --
+# generators_test.py checks that the generator writes the right text; this
+# checks that the text means the right thing once compiled.
+test("weglet_unittests") {
+  sources = [ "browser/weglet_contract_unittest.cc" ]
+
+  deps = [
+    "ui",
+    "//base",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
+  ]
+}
+
+# The generators are the mechanism that keeps four languages saying the
+# same thing, and they had no tests at all -- their only self-check was a
+# duplicate-name test. A mistake in contract.json or tokens.json does not
+# fail in those scripts; it produces generated C++ that fails to compile
+# with an error pointing at a file nobody wrote.
+action("check_generators") {
+  script = "ui/generators_test.py"
+  inputs = [
+    "ui/contract.json",
+    "ui/generate_contract.py",
+    "ui/generate_tokens.py",
+    "ui/tokens.json",
+  ]
+  outputs = [ "$target_gen_dir/generators_test.stamp" ]
+  args = [
+    "--stamp",
+    rebase_path("$target_gen_dir/generators_test.stamp", root_build_dir),
+  ]
+}
+
+# protocol.ts validates every push before a page acts on it, and that is
+# the code deciding whether a malformed message is a dropped update or an
+# exception halfway through rendering the tab strip. Run under the same
+# vendored node build_ui.py compiles with -- no npm, no node_modules.
+action("check_ui") {
+  script = "ui/run_ui_tests.py"
+  # Coarse on purpose, the same way ui/BUILD.gn's build_ui action is: a
+  # depfile listing every .ts would be a second copy of the source list to
+  # keep in step. Editing a page re-runs these; that is cheap.
+  inputs = [
+    "build_support.py",
+    "ui/contract.json",
+    "ui/generate_contract.py",
+    "ui/generate_tokens.py",
+    "ui/test/protocol_test.ts",
+    "ui/tokens.json",
+  ]
+  outputs = [ "$target_gen_dir/ui_test.stamp" ]
+  args = [
+    "--chromium-root",
+    rebase_path("//", root_build_dir),
+    "--stamp",
+    rebase_path("$target_gen_dir/ui_test.stamp", root_build_dir),
+  ]
+}
+
+# Which Chromium revision weglet/CHROMIUM_VERSION says this is meant to be.
+action("check_chromium_version") {
+  script = "check_chromium_version.py"
+  inputs = [
+    "CHROMIUM_VERSION",
+    "//chrome/VERSION",
+  ]
+  outputs = [ "$target_gen_dir/chromium_version_check.stamp" ]
+  args = [
+    "--expected",
+    rebase_path("CHROMIUM_VERSION", root_build_dir),
+    "--actual",
+    rebase_path("//chrome/VERSION", root_build_dir),
+    "--stamp",
+    rebase_path("$target_gen_dir/chromium_version_check.stamp", root_build_dir),
+  ]
+}
+
+# Keeps weglet_pak's hand-written list honest against the one it was
+# trimmed from. See check_pak.py -- the differences are deliberate and
+# declared there, so a new one is a build failure with a name in it.
+action("check_pak") {
+  script = "check_pak.py"
+  inputs = [
+    "BUILD.gn",
+    "pak_exclusions.txt",
+    "//content/shell/BUILD.gn",
+  ]
+  outputs = [ "$target_gen_dir/pak_check.stamp" ]
+  args = [
+    "--weglet-build",
+    rebase_path("BUILD.gn", root_build_dir),
+    "--shell-build",
+    rebase_path("//content/shell/BUILD.gn", root_build_dir),
+    "--exclusions",
+    rebase_path("pak_exclusions.txt", root_build_dir),
+    "--stamp",
+    rebase_path("$target_gen_dir/pak_check.stamp", root_build_dir),
+  ]
 }
 
 # Without a resource pack, startup trips on the first string or image
@@ -154,6 +285,20 @@ repack("weglet_pak") {
       "$root_gen_dir/content/browser/tracing/tracing_resources.pak",
       "$root_gen_dir/content/traces_internals_resources.pak",
     ]
+  }
+
+  # The window is a views::Widget on every desktop platform -- see the
+  # use_aura block in weglet_lib above -- and views has resources of its
+  # own. content/shell guards the same two lines with
+  # shell_use_toolkit_views; the condition here is use_aura because that
+  # is what decides whether Weglet links views at all.
+  #
+  # Without this the first image views asks ResourceBundle for is not
+  # there, which is the failure this whole target exists to prevent.
+  if (use_aura) {
+    deps += [ "//ui/views/resources" ]
+    sources +=
+        [ "$root_gen_dir/ui/views/resources/views_resources_100_percent.pak" ]
   }
 
   output = "$root_out_dir/weglet.pak"

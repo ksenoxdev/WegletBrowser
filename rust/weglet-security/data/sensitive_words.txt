@@ -1,0 +1,31 @@
+# Words that suggest a page is after credentials or money. One per line;
+# '#' starts a comment.
+#
+# Used only together with another signal -- a throwaway TLD, a brand token
+# in a domain that is not the brand's. On their own these are ordinary
+# words that appear in ordinary URLs.
+#
+# Data, not code: adding a word should not be a recompile.
+2fa
+account
+appeal
+auth
+bank
+billing
+confirm
+credential
+login
+logon
+mfa
+otp
+password
+payment
+recovery
+reset
+secure
+seed
+signin
+unlock
+verification
+verify
+wallet
