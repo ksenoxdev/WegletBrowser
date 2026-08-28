@@ -1,15 +1,11 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// weglet/ui/src/trusted_types.d.ts
+// lib.dom.d.ts references these three names but does not declare them;
+// they live in a separate @types package. Declaring them here keeps the
+// build off that dependency.
 //
-// TypeScript's own lib.dom.d.ts references these three names but does not
-// declare them -- they live in a separate @types package that Chromium
-// wires in through its own config. Declaring them here keeps the build off
-// that dependency.
-//
-// Opaque on purpose. Weglet never creates a TrustedHTML: the only way a
-// string becomes DOM in this codebase is textContent (see dom.ts), so
-// nothing needs to construct one and nothing should be able to.
+// Opaque on purpose: nothing in this codebase constructs a TrustedHTML,
+// because the only way a string becomes DOM is textContent.
 
 declare interface TrustedHTML {
   readonly __brand: "TrustedHTML";

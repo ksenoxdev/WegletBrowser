@@ -1,24 +1,22 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// weglet/ui/src/newtab.ts
+// The new tab page: clock, search field, dock.
 
-import { register, scheduleFrame, spawnRipple, Strip } from "./anim.js";
+import { spawnRipple } from "./anim.js";
 import {byId, el, runPage} from "./dom.js";
+import { faviconUrl } from "./favicon.js";
+import { applyI18n, t, type Language } from "./i18n.js";
 import { setIcon } from "./icons.js";
 import { createContextMenu, createModal } from "./modal.js";
 import { onNewTab, send, type NewTabState, type Shortcut } from "./protocol.js";
-import { tokens } from "./tokens.js";
-
-// The one place in the interface that genuinely grows under the pointer:
-// scale up to 1.45, spreading to neighbours as a gaussian. Everything else
-// uses a strip that only heats the control being pointed at.
-const dockStrip = new Strip(1.45, true);
+import { applyAccent, applyAddressBarShape } from "./theme.js";
 
 let tiles: HTMLElement[] = [];
 let shortcuts: readonly Shortcut[] = [];
-// Which shortcut the context menu was opened on. -1 for the add tile, which
-// has no shortcut behind it.
+// Which shortcut the context menu was opened on. -1 for the add tile.
 let menuTarget = -1;
+// Read by the modal's open/edit handlers, which run outside render().
+let currentLanguage: Language = "en";
 
 // ---------------------------------------------------------------------
 // Clock
@@ -33,8 +31,8 @@ function renderClock(): void {
 
 function startClock(): void {
   renderClock();
-  // Ticks on the minute rather than every second: 59 of every 60 wake-ups
-  // changed nothing, and this page is open in every new tab.
+  // Ticks on the minute: 59 of every 60 wake-ups changed nothing, and this
+  // page is open in every new tab.
   const msToNextMinute = 60_000 - (Date.now() % 60_000);
   window.setTimeout(() => {
     renderClock();
@@ -46,36 +44,15 @@ function startClock(): void {
 // Dock
 // ---------------------------------------------------------------------
 
-function bounce(tile: HTMLElement): void {
-  // Removed, forced to reflow, re-added: without the reflow the class change
-  // is coalesced and the animation never restarts on a second click.
-  tile.classList.remove("bounce");
-  void tile.offsetWidth;
-  tile.classList.add("bounce");
-  tile.addEventListener("animationend", () => tile.classList.remove("bounce"), {
-    once: true,
-  });
-}
-
 function dockSlot(
-  index: number,
   tip: string,
   tile: HTMLElement,
   onContextMenu: ((event: MouseEvent) => void) | null,
 ): HTMLElement {
   const slot = el("div", { className: "dock-slot", children: [tile] });
-  // An attribute, not an element: one tooltip per slot as a pseudo-element
-  // costs nothing, and the dock has no room for real nodes.
+  // An attribute, not an element: the dock has no room for real nodes.
   slot.dataset.tip = tip;
 
-  slot.addEventListener("pointerenter", () => {
-    dockStrip.hover(index);
-    scheduleFrame();
-  });
-  slot.addEventListener("pointerleave", () => {
-    dockStrip.hover(null);
-    scheduleFrame();
-  });
   if (onContextMenu) {
     slot.addEventListener("contextmenu", (event) => {
       event.preventDefault();
@@ -85,21 +62,28 @@ function dockSlot(
   return slot;
 }
 
-function shortcutTile(shortcut: Shortcut): HTMLElement {
-  // The first letter, not a favicon. Fetching one tells a third party what
-  // the user has pinned, and this browser makes no request the user did not
-  // ask for -- see docs/security.md.
+function shortcutTile(shortcut: Shortcut, faviconsEnabled: boolean): HTMLElement {
+  // First letter by default -- fetching a favicon tells a third party
+  // what's pinned. See docs/security.md.
   const initial = [...shortcut.title][0]?.toUpperCase() ?? "?";
 
   const tile = el("div", { className: "dock-tile", text: initial });
   tile.setAttribute("role", "button");
   tile.tabIndex = 0;
 
-  const activate = (event: MouseEvent | null): void => {
-    bounce(tile);
-    if (event) {
-      spawnRipple(tile, event.clientX, event.clientY);
-    }
+  const src = faviconsEnabled ? faviconUrl(shortcut.url) : null;
+  if (src) {
+    const img = el("img", { className: "dock-tile-mark" });
+    img.src = src;
+    img.alt = "";
+    img.referrerPolicy = "no-referrer";
+    // Falls back to the letter already sitting in the tile: removing
+    // the image just uncovers it.
+    img.addEventListener("error", () => img.remove(), { once: true });
+    tile.appendChild(img);
+  }
+
+  const activate = (): void => {
     send("navigate", shortcut.url);
   };
 
@@ -108,7 +92,7 @@ function shortcutTile(shortcut: Shortcut): HTMLElement {
     const key = (event as KeyboardEvent).key;
     if (key === "Enter" || key === " ") {
       event.preventDefault();
-      activate(null);
+      activate();
     }
   });
   return tile;
@@ -123,10 +107,10 @@ function addTile(): HTMLElement {
 
   const open = (): void => {
     menuTarget = -1;
-    byId("modal-title").textContent = "Add shortcut";
+    byId("modal-title").textContent = t("newtab.addShortcutTitle", currentLanguage);
     byId<HTMLInputElement>("shortcut-name").value = "";
     byId<HTMLInputElement>("shortcut-url").value = "";
-    byId("shortcut-confirm").textContent = "Add";
+    byId("shortcut-confirm").textContent = t("newtab.add", currentLanguage);
     modal.open();
   };
 
@@ -142,6 +126,10 @@ function addTile(): HTMLElement {
 }
 
 function renderDock(state: NewTabState): void {
+  currentLanguage = state.language;
+  applyI18n(state.language);
+  applyAccent(state.accentColor);
+  applyAddressBarShape(state.addressBarShape);
   shortcuts = state.shortcuts;
   byId("hint").textContent = state.hint;
   const dock = byId("dock");
@@ -149,41 +137,22 @@ function renderDock(state: NewTabState): void {
   tiles = [];
 
   state.shortcuts.forEach((shortcut, index) => {
-    const tile = shortcutTile(shortcut);
+    const tile = shortcutTile(shortcut, state.faviconsEnabled);
     tiles.push(tile);
     slots.push(
-      dockSlot(index, shortcut.title, tile, (event) => {
+      dockSlot(shortcut.title, tile, (event) => {
         menuTarget = index;
         menu.openAt(event.clientX, event.clientY);
       }),
     );
   });
 
-  // The add tile is a slot like any other, so it heats and grows with the
-  // rest instead of sitting still at the end of a moving row.
+  // The add tile is a slot like any other.
   const add = addTile();
   tiles.push(add);
-  slots.push(dockSlot(state.shortcuts.length, "Add shortcut", add, null));
+  slots.push(dockSlot("Add shortcut", add, null));
 
   dock.replaceChildren(...slots);
-  scheduleFrame();
-}
-
-function renderTiles(now: number): void {
-  tiles.forEach((tile, index) => {
-    const presentation = dockStrip.presentation(index, now);
-    if (tile.classList.contains("bounce")) {
-      // The bounce keyframes own the transform while they run; writing one
-      // here would fight them.
-      tile.style.opacity = String(presentation.arrival);
-      return;
-    }
-    // Lift proportional to growth: a tile that scales without rising looks
-    // like it is being squashed into the dock.
-    const lift = (presentation.scale - 1) * tokens.layoutDockLift;
-    tile.style.transform = `scale(${presentation.scale}) translateY(${-lift}px)`;
-    tile.style.opacity = String(presentation.arrival);
-  });
 }
 
 // ---------------------------------------------------------------------
@@ -193,13 +162,11 @@ function renderTiles(now: number): void {
 function wireSearch(): void {
   const form = byId("search-form");
   const bar = byId<HTMLInputElement>("search-bar");
-  // No mark yet: it should be the configured engine's own logo, and those
-  // are not in the repository. The field keeps its right padding so its
-  // proportions do not change when one arrives.
+  // No mark yet: it should be the engine's own logo. The field keeps its
+  // right padding so its proportions do not change when one arrives.
 
-  // autofocus fires a real focus event on load, exactly like a click. The
-  // sweep should mark the user arriving, not the page opening, so the first
-  // moment is ignored.
+  // autofocus fires a real focus event on load. The sweep marks the user
+  // arriving, not the page opening, so the first moment is ignored.
   let ignoreAutofocus = true;
   window.setTimeout(() => {
     ignoreAutofocus = false;
@@ -211,7 +178,7 @@ function wireSearch(): void {
       return;
     }
     form.classList.remove("neon-play", "neon-drift");
-    // Forces a reflow so the animation restarts rather than being coalesced.
+    // Forces a reflow so the animation restarts rather than coalescing.
     void form.offsetWidth;
     form.classList.add("neon-play");
   });
@@ -220,8 +187,8 @@ function wireSearch(): void {
     form.classList.remove("focused", "neon-play", "neon-drift");
   });
 
-  // One fast lap, then a slow endless drift: the arrival should be noticed
-  // and the idle state should not.
+  // One fast lap, then a slow drift: the arrival should be noticed and the
+  // idle state should not.
   form.addEventListener("animationend", () => {
     if (form.classList.contains("neon-play")) {
       form.classList.remove("neon-play");
@@ -246,6 +213,7 @@ function wireSearch(): void {
 const modal = createModal({
   backdropId: "shortcut-backdrop",
   focusId: "shortcut-name",
+  cancelId: "shortcut-cancel",
   onConfirm: () => {
     const title = byId<HTMLInputElement>("shortcut-name").value.trim();
     const url = byId<HTMLInputElement>("shortcut-url").value.trim();
@@ -269,10 +237,10 @@ const menu = createContextMenu("shortcut-menu", [
       if (!shortcut) {
         return;
       }
-      byId("modal-title").textContent = "Edit shortcut";
+      byId("modal-title").textContent = t("newtab.editShortcutTitle", currentLanguage);
       byId<HTMLInputElement>("shortcut-name").value = shortcut.title;
       byId<HTMLInputElement>("shortcut-url").value = shortcut.url;
-      byId("shortcut-confirm").textContent = "Save";
+      byId("shortcut-confirm").textContent = t("newtab.save", currentLanguage);
       modal.open();
     },
   },
@@ -295,7 +263,6 @@ function main(): void {
     spawnRipple(byId("shortcut-confirm"), event.clientX, event.clientY);
   });
 
-  register(dockStrip, () => tiles.length, renderTiles);
   onNewTab(renderDock);
 }
 

@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
 # Copyright 2026 Weglet - Licensed under Apache 2.0
 #
-# weglet/ui/run_ui_tests.py
-#
-# Compiles and runs weglet/ui/test/*.ts under Chromium's vendored node --
-# the same node and the same TypeScript that build_ui.py compiles the
-# pages with. No npm, no node_modules, no test framework: the tests assert
-# and exit non-zero, which is all a build step needs.
+# Compiles and runs ui/test/*.ts under Chromium's vendored node -- the same
+# node and TypeScript build_ui.py uses. No npm, no test framework: the
+# tests assert and exit non-zero.
 #
 # Usage:
 #   python3 weglet/ui/run_ui_tests.py --chromium-root ../..
@@ -17,8 +14,7 @@ import shutil
 import subprocess
 import sys
 
-# weglet/build_support.py -- find_node_toolchain and write_depfile, which
-# every build script here needs and which used to exist twice.
+# find_node_toolchain and write_depfile.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import build_support  # noqa: E402
 import tempfile
@@ -57,7 +53,7 @@ def main() -> int:
                 return result.returncode
 
         # Its own tsconfig: the tests are not part of what ships, and the
-        # shipped tsconfig's `include` deliberately covers only src/.
+        # shipped one covers only src/.
         config = os.path.join(out, "tsconfig.json")
         with open(config, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(
@@ -79,10 +75,7 @@ def main() -> int:
                 )
             )
 
-        # ES modules under node need the directory marked as such. Written
-        # before tsc runs: the module settings come from the shipped
-        # tsconfig, which already emits ES modules, and node reads this to
-        # decide how to load them.
+        # ES modules under node need the directory marked as such.
         with open(
             os.path.join(out, "package.json"), "w", encoding="utf-8", newline="\n"
         ) as handle:

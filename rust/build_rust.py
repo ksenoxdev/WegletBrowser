@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 # Copyright 2026 Weglet - Licensed under Apache 2.0
 #
-# weglet/rust/build_rust.py
-#
 # Runs cargo for GN and reports the result the way GN expects.
 #
-# Cargo rather than GN's own Rust support because the dependency set comes
-# from crates.io. Declaring each crate as a third_party GN target would be
-# a hand-maintained copy of Cargo.lock, and every `cargo update` would be
-# a patch to the Chromium tree.
+# Cargo rather than GN's own Rust support: the dependency set comes from
+# crates.io, and declaring each crate as a third_party GN target would be
+# a hand-maintained copy of Cargo.lock.
 
 import argparse
 import os
@@ -16,8 +13,7 @@ import shutil
 import subprocess
 import sys
 
-# weglet/build_support.py -- find_node_toolchain and write_depfile, which
-# every build script here needs and which used to exist twice.
+# find_node_toolchain and write_depfile.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import build_support  # noqa: E402
 
@@ -25,28 +21,16 @@ import build_support  # noqa: E402
 def generate(workspace: str) -> None:
     """Regenerates the two files weglet crates get from weglet/ui.
 
-    Run before every cargo build, not gated by a depfile: both are small to
-    produce, and the crates have to build correctly under a plain `cargo
-    build` too, with no GN action having run first. Both are checked in for
-    the same reason.
+    Run before every cargo build: both are small to produce, and the
+    crates have to build under a plain `cargo build` too, with no GN
+    action having run first. Both are checked in for the same reason.
 
       * weglet-core/src/generated_addresses.rs -- Weglet's own addresses,
         from contract.json. The C++ side generates its copy from the same
-        file, so the addresses a tab can hold and the addresses
-        ResolveForEngine knows how to open cannot list a different set
-        again.
+        file.
 
       * weglet-profile/src/generated_defaults.rs -- the default accent,
-        from tokens.json. The same colour the CSS compiles in and the
-        settings page offers first. This used to be a literal in
-        settings.rs that this script kept honest by reading the .rs file
-        with a regular expression: Python parsing Rust to notice a
-        disagreement it could not fix. Generating it means there is
-        nothing left to disagree.
-
-    Each generator is asked for exactly the output wanted. They used to
-    write all of theirs at once, so this script passed throwaway paths
-    inside the source tree and deleted them afterwards.
+        from tokens.json. The same colour the CSS compiles in.
     """
     ui_dir = os.path.join(os.path.dirname(workspace), "ui")
 
@@ -104,9 +88,8 @@ def main() -> int:
         )
         return 1
 
-    # Its own target directory, inside the GN output tree. Sharing one with
-    # a developer's `cargo build` would mean the two fighting over the same
-    # lock and rebuilding each other's artifacts.
+    # Its own target directory inside the GN output tree: sharing one with
+    # a developer's `cargo build` means fighting over the same lock.
     target_dir = os.path.join(os.path.dirname(out), "rust")
 
     command = [
@@ -120,8 +103,8 @@ def main() -> int:
         args.target,
         "--target-dir",
         target_dir,
-        # Reproducible: no network at build time, and a lock file that is
-        # never silently updated by a build.
+        # Reproducible: no network at build time, and a lock file a build
+        # never silently updates.
         "--locked",
         "--offline",
     ]
@@ -148,9 +131,7 @@ def main() -> int:
         )
         return 1
 
-    # Tells ninja to re-run this when any source changes. Without it a
-    # change to a .rs file does not rebuild, which is the kind of thing
-    # that costs an afternoon.
+    # Tells ninja to re-run this when any source changes.
     if args.depfile:
         # Every .rs plus the manifests: cargo decides what to rebuild, but
         # GN has to know when to ask it at all.

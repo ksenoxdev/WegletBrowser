@@ -1,0 +1,66 @@
+/* Copyright 2026 Weglet - Licensed under Apache 2.0
+ *
+ * A small floating popup -- see menu.css. Its whole window is exactly
+ * this bar, so there is no outer scroll region.
+ */
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--color-surface-raised);
+}
+
+body {
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-menu);
+  box-sizing: border-box;
+  color: var(--color-text);
+  font-family: "Instrument Sans", sans-serif;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px;
+}
+
+#find-input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-family: "Instrument Sans", sans-serif;
+  outline: none;
+}
+
+#find-input::placeholder {
+  color: var(--color-text-dim);
+}
+
+.find-count {
+  flex-shrink: 0;
+  color: var(--color-text-dim);
+  font-size: var(--font-size-xs);
+  min-width: 42px;
+  text-align: right;
+}
+
+.find-btn {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-menu-item);
+  color: var(--color-text-dim);
+  cursor: pointer;
+}
+
+.find-btn:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}

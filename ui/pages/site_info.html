@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<!-- Copyright 2026 Weglet - Licensed under Apache 2.0
+
+     The dropdown opened by the toolbar's site-info button -- its own
+     floating popup, not DOM inside the toolbar's own page: see
+     WegletSiteInfoPopup. Structure only; filled in and wired by
+     site_info.ts.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Site info</title>
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="base.css" />
+    <link rel="stylesheet" href="site_info.css" />
+  </head>
+  <body>
+    <div id="internal-view" hidden>
+      <div class="shield-row">
+        <span class="shield-icon" id="shield-icon"></span>
+        <div class="shield-title" data-i18n="siteInfo.internalTitle">This is a Weglet page</div>
+      </div>
+      <div class="shield-body" data-i18n="siteInfo.internalBody">
+        It is part of the browser and does not need permissions.
+      </div>
+    </div>
+    <div id="external-view" hidden>
+      <div class="origin" id="origin"></div>
+      <ul class="permissions" id="permissions"></ul>
+    </div>
+    <script type="module" src="site_info.js"></script>
+  </body>
+</html>

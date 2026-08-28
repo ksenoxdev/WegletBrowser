@@ -1,6 +1,6 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// rust/weglet-profile/src/session.rs
+// The open windows and tabs, saved and restored.
 
 use std::path::Path;
 
@@ -31,10 +31,9 @@ pub struct SessionWindow {
 pub struct Session {
     pub windows: Vec<SessionWindow>,
 
-    // What a session written before windows existed looks like: a flat
-    // tab list and one active index. Read and folded into a single window
-    // by repair(), then never written again -- an upgrade must not throw
-    // away the tabs someone had open.
+    // The pre-windows shape: a flat tab list and one active index. Read
+    // and folded into a single window by repair(), then never written
+    // again.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub tabs: Vec<SessionTab>,
     #[serde(skip_serializing_if = "is_zero")]
@@ -46,10 +45,8 @@ fn is_zero(value: &usize) -> bool {
 }
 
 impl Session {
-    // A missing file is a first run. A corrupt one is an error the caller
-    // can report -- but note the caller is expected to fall back to a
-    // fresh session rather than refuse to start: a broken session file
-    // must never be the reason the browser will not open.
+    // A missing file is a first run. A corrupt one is an error, and the
+    // caller falls back to a fresh session rather than refusing to start.
     pub fn load(path: &Path) -> Result<Self, Error> {
         let text = match std::fs::read_to_string(path) {
             Ok(text) => text,
@@ -80,13 +77,11 @@ impl Session {
         crate::atomic::write(path, &text)
     }
 
-    // Makes anything that came off disk safe to index with. Every number
-    // here was written by a previous run, or by whatever else touched the
-    // file, and an out-of-range one would panic at startup.
+    // Makes anything that came off disk safe to index with: an
+    // out-of-range number would panic at startup.
     fn repair(&mut self) {
         // The pre-windows shape, folded in. Only when there is no windows
-        // block at all, so a file written by this version is never read
-        // twice.
+        // block at all.
         if self.windows.is_empty() && !self.tabs.is_empty() {
             self.windows.push(SessionWindow {
                 tabs: std::mem::take(&mut self.tabs),
@@ -96,11 +91,9 @@ impl Session {
         self.tabs.clear();
         self.active = 0;
 
-        // No cap here on purpose. How many tabs and windows may exist is
-        // the model's rule, and AppState::restore enforces it -- a copy
-        // of the number in this file would be a second place to change
-        // it and a second place to get it wrong. What repair() is for is
-        // making the file safe to index with, which is a different job.
+        // No cap here: how many tabs and windows may exist is the model's
+        // rule, enforced in AppState::restore. This only makes the file
+        // safe to index with.
         for window in &mut self.windows {
             window.tabs.retain(|tab| !tab.entries.is_empty());
             for tab in &mut window.tabs {
@@ -116,11 +109,8 @@ impl Session {
         self.windows.retain(|window| !window.tabs.is_empty());
     }
 
-    // The shape AppState::restore wants. The tuple is spelled out here
-    // rather than imported, because this crate deliberately does not
-    // depend on weglet-core: the crate that is all IO should not be able
-    // to reach into the one that has none. weglet-core names the same
-    // shape RestoredWindow.
+    // The shape AppState::restore wants, spelled out rather than
+    // imported: this crate does not depend on weglet-core.
     pub fn to_restore_input(&self) -> Vec<RestoredWindow> {
         self.windows
             .iter()
@@ -215,8 +205,7 @@ mod tests {
         assert!(session.tabs.is_empty());
     }
 
-    // Every one of these would panic at startup if the number were used
-    // as written.
+    // Every one of these would panic at startup if used as written.
     #[test]
     fn out_of_range_indices_are_repaired_on_load() {
         let path = file("repair");

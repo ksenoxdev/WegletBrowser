@@ -1,6 +1,6 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// weglet/common/weglet_content_client.h
+// ContentClient: resource-pack access for content and Blink.
 
 #ifndef WEGLET_COMMON_WEGLET_CONTENT_CLIENT_H_
 #define WEGLET_COMMON_WEGLET_CONTENT_CLIENT_H_
@@ -12,12 +12,8 @@
 
 namespace weglet {
 
-// How the content layer and Blink reach the resource pack.
-//
-// Not optional, despite every method having a base implementation: with
-// no ContentClient installed, Blink cannot load the resources it parses
-// HTML with, and every page renders as plain text with its own <style>
-// and <script> spelled out on screen.
+// Without a ContentClient, Blink cannot load the resources it parses HTML
+// with, and every page renders as plain text.
 class WegletContentClient : public content::ContentClient {
  public:
   WegletContentClient();

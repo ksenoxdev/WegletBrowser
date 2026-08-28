@@ -1,14 +1,20 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// weglet/browser/weglet_content_browser_client.cc
+// ContentBrowserClient: policy answers and the navigation throttle.
 
 #include "weglet/browser/weglet_content_browser_client.h"
 
 #include <utility>
 
+#include "base/functional/bind.h"
 #include "components/embedder_support/user_agent_utils.h"
+#include "components/spellcheck/common/spellcheck.mojom.h"
+#include "content/public/browser/render_frame_host.h"
+#include "mojo/public/cpp/bindings/binder_map.h"
 #include "weglet/browser/weglet_browser_main_parts.h"
+#include "weglet/browser/weglet_devtools_manager_delegate.h"
 #include "weglet/browser/weglet_navigation_throttle.h"
+#include "weglet/browser/weglet_spell_check_host.h"
 
 namespace weglet {
 
@@ -23,9 +29,8 @@ WegletContentBrowserClient::CreateBrowserMainParts(bool is_integration_test) {
 }
 
 std::string WegletContentBrowserClient::GetProduct() {
-  // Chrome's own product string, on purpose. A distinct one here would
-  // make every Weglet user uniquely identifiable to every site they
-  // visit, which is the opposite of the point.
+  // Chrome's own product string: a distinct one would make every Weglet
+  // user uniquely identifiable to every site they visit.
   return embedder_support::GetProductAndVersion();
 }
 
@@ -42,5 +47,27 @@ void WegletContentBrowserClient::CreateThrottlesForNavigation(
   WegletNavigationThrottle::MaybeCreateAndAdd(registry);
 }
 
+std::unique_ptr<content::DevToolsManagerDelegate>
+WegletContentBrowserClient::CreateDevToolsManagerDelegate() {
+  return std::make_unique<WegletDevToolsManagerDelegate>();
+}
+
+void WegletContentBrowserClient::RegisterBrowserInterfaceBindersForFrame(
+    content::RenderFrameHost* render_frame_host,
+    mojo::BinderMapWithContext<content::RenderFrameHost*>* map) {
+  map->Add<spellcheck::mojom::SpellCheckHost>(base::BindRepeating(
+      &WegletContentBrowserClient::BindSpellCheckHost,
+      base::Unretained(this)));
+}
+
+void WegletContentBrowserClient::BindSpellCheckHost(
+    content::RenderFrameHost* frame_host,
+    mojo::PendingReceiver<spellcheck::mojom::SpellCheckHost> receiver) {
+  if (!browser_main_parts_) {
+    return;
+  }
+  WegletSpellCheckHost::Create(browser_main_parts_->spell_checker(),
+                               std::move(receiver));
+}
 
 }  // namespace weglet

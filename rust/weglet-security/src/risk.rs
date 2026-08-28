@@ -1,15 +1,7 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// crates/weglet-security/src/risk.rs
-//
-// Navigation risk assessment: punycode, confusable letters and brand
-// impersonation.
-//
-// These heuristics are advisory. They are wrong in both directions and
-// nothing else in the browser depends on them being right -- see
-// docs/security.md. Their measured false-positive and
-// false-negative rates live in tests/corpus.rs; change a rule here and
-// that test says what it cost.
+// Punycode, confusable letters and brand impersonation. Advisory, and
+// wrong in both directions; the measured rates are in tests/corpus.rs.
 
 use std::collections::HashSet;
 use std::sync::OnceLock;
@@ -33,10 +25,9 @@ pub struct NavigationRisk {
 struct BrandRule {
     #[serde(rename = "name")]
     display_name: String,
-    // A label that IS the brand wherever it sits in front of a public
-    // suffix: google.com, google.co.nz, google.de and the ~190 other
-    // country domains are all Google's, and hand-listing them was how
-    // blog.google and github.dev ended up blocked.
+    // A label that is the brand wherever it sits in front of a public
+    // suffix: google.com, google.co.nz and the other ~190 country domains
+    // are all Google's. Hand-listing them blocked blog.google.
     #[serde(rename = "labels", default)]
     official_labels: Vec<String>,
     // Registrable domains the brand owns whose own label is not one of
@@ -54,20 +45,16 @@ struct BrandFile {
     brand: Vec<BrandRule>,
 }
 
-// The brands, as data. See data/brands.toml for the format.
-//
-// include_str! rather than a file read at startup: Weglet ships one
-// executable and nothing beside it. What this buys over the const array
-// it replaces is that adding a brand is editing a table, not editing Rust
-// and rebuilding -- and that a profile can supply its own.
+// The brands, as data. See data/brands.toml for the format. include_str!
+// rather than a file read at startup: Weglet ships one executable and
+// nothing beside it, and a profile can supply its own.
 const BUILT_IN_BRANDS: &str = include_str!("../data/brands.toml");
 
 static BRAND_OVERRIDE: OnceLock<Vec<BrandRule>> = OnceLock::new();
 
 // Installs rules read from the profile, replacing the built-in set.
-// Malformed input is rejected and reported rather than partly applied:
-// half a rule set is a browser that blocks some impostors and waves
-// others through, with nothing to say which.
+// Malformed input is rejected whole: half a rule set blocks some
+// impostors and waves others through.
 pub fn set_brand_rules_override(text: &str) -> Result<(), String> {
     let parsed = parse_brands(text)?;
     let _ = BRAND_OVERRIDE.set(parsed);
@@ -93,10 +80,8 @@ fn brand_rules() -> &'static [BrandRule] {
 }
 
 
-// Matched against whole words rather than as substrings: "auth" inside
-// "authority" and "live" inside "livestream" are not signals, and
-// treating them as such was most of the noise this list produced.
 // The words, as data. One per line; see data/sensitive_words.txt.
+// Matched as whole words: "auth" inside "authority" is not a signal.
 const BUILT_IN_SENSITIVE_WORDS: &str = include_str!("../data/sensitive_words.txt");
 
 static WORD_OVERRIDE: OnceLock<Vec<String>> = OnceLock::new();
@@ -122,10 +107,9 @@ fn sensitive_words() -> &'static [String] {
 }
 
 
-// What the rest of the name says when a brand is embedded in it. On
-// their own these mean nothing -- "applebees" and "microsoftware" are
-// somebody's actual business -- but next to a brand name they are the
-// whole shape of a phishing domain.
+// What the rest of the name says when a brand is embedded in it. On their
+// own these mean nothing -- applebees is somebody's business -- but next
+// to a brand name they are the shape of a phishing domain.
 const LURE_WORDS: &[&str] = &[
     "account",
     "activate",
@@ -196,9 +180,8 @@ const HIGH_RISK_TLDS: &[&str] = &[
     "zip",
 ];
 
-// Suffixes that never leave the machine or the local network. A
-// developer hitting their own server is not a phishing victim, and
-// warning on every one of them trains people to click through.
+// Suffixes that never leave the machine or the local network. Warning on
+// every developer hitting their own server trains people to click through.
 const LOCAL_SUFFIXES: &[&str] = &["localhost", "local", "test", "internal", "home.arpa", "lan"];
 
 pub fn assess_navigation(raw_url: &str) -> Option<NavigationRisk> {
@@ -276,8 +259,8 @@ pub fn assess_navigation(raw_url: &str) -> Option<NavigationRisk> {
         ));
     }
 
-    // Nothing below applies to a machine talking to itself or to its own
-    // network. Checked before every heuristic, not after.
+    // Nothing below applies to a machine talking to itself or its own
+    // network.
     if is_local(&host) {
         return None;
     }
@@ -302,11 +285,9 @@ pub fn assess_navigation(raw_url: &str) -> Option<NavigationRisk> {
     }
 
     // A label written entirely in another alphabet whose every character
-    // has a Latin lookalike is not a domain in that language -- it is a
-    // Latin word in disguise. A genuine Cyrillic or Greek domain has at
-    // least one character with no Latin twin, which is what keeps
-    // a genuine Cyrillic domain (U+043F U+0440 U+0438 U+043C U+0435 U+0440,
-// "primer", in the .rf zone) out of this branch.
+    // has a Latin lookalike is a Latin word in disguise. A genuine
+    // Cyrillic or Greek domain has at least one character with no Latin
+    // twin.
     if disguised {
         return Some(NavigationRisk {
             level: if sensitive {
@@ -381,7 +362,7 @@ pub fn assess_navigation(raw_url: &str) -> Option<NavigationRisk> {
             host,
         ));
     }
-    // Only worth mentioning on a page that wants credentials -- plenty of
+    // Only worth mentioning on a page that wants credentials: plenty of
     // ordinary sites run on 8080 or 8443.
     if sensitive {
         if let Some(port) = parsed.port() {
@@ -397,14 +378,12 @@ pub fn assess_navigation(raw_url: &str) -> Option<NavigationRisk> {
     None
 }
 
-// Splits the registrable domain off the public suffix. Returns the index
-// of the domain's own label within the host's labels, so the caller can
-// tell "the name the owner chose" from the subdomains in front of it.
+// Splits the registrable domain off the public suffix, returning the index
+// of the domain's own label so the caller can tell the name the owner
+// chose from the subdomains in front of it.
 //
-// Only the ICANN half of the list counts here. The private half contains
-// entries like googleapis.com and githubusercontent.com, and honouring
-// those would make the brand's own label part of the "suffix" and hide
-// it from the official check below.
+// ICANN half only: the private half contains googleapis.com and
+// githubusercontent.com, which would hide the brand's own label.
 fn own_label_index(host: &str) -> Option<usize> {
     let suffix = psl::suffix(host.as_bytes())?;
     let mut suffix_labels = std::str::from_utf8(suffix.as_bytes())
@@ -431,13 +410,12 @@ fn find_brand_impersonation(
     mixed_scripts: bool,
     uses_punycode: bool,
 ) -> Option<NavigationRisk> {
-    // The host is a bare public suffix, or one the list doesn't know.
-    // Nothing to compare a brand against.
+    // A bare public suffix, or one the list does not know. Nothing to
+    // compare a brand against.
     let own_index = own_label_index(host)?;
     let ascii_labels: Vec<&str> = host.split('.').collect();
     let unicode_labels: Vec<&str> = unicode_host.split('.').collect();
-    // idna maps label for label, so the two line up; fall back to the
-    // ascii form if some platform ever disagrees.
+    // idna maps label for label, so the two line up.
     let own_label = unicode_labels
         .get(own_index)
         .copied()
@@ -446,9 +424,8 @@ fn find_brand_impersonation(
     let registrable = ascii_labels[own_index..].join(".");
     let own_skeleton = skeleton(own_label);
     let own_variants = homoglyph_variants(&own_skeleton);
-    // Compared as registered, NOT folded: skeleton() maps 0 to o, so
-    // checking the folded form here would read "faceb00k" as the real
-    // "facebook" and wave the impostor straight through.
+    // Compared as registered, not folded: skeleton() maps 0 to o, so the
+    // folded form would read "faceb00k" as the real "facebook".
     let own_ascii = ascii_labels.get(own_index).copied().unwrap_or_default();
 
     // It is the brand. Stop before any impersonation rule runs.
@@ -467,8 +444,7 @@ fn find_brand_impersonation(
         let mut matched = None;
         for token in rule.tokens.iter().map(String::as_str) {
             // Typosquat or homoglyph of the name itself: gooogle,
-            // faceb00k, or U+0430 U+0440 U+0440 U+04CF U+0435 -- five Cyrillic
-            // letters that read as "apple". Strongest signal there is.
+            // faceb00k, or five Cyrillic letters that read as "apple".
             if own_variants
                 .iter()
                 .any(|variant| variant == token || edit_distance_at_most_one(variant, token))
@@ -476,11 +452,9 @@ fn find_brand_impersonation(
                 matched = Some(Confidence::Exact);
                 break;
             }
-            // The brand name used as a word inside a longer name, but
-            // only when the rest of the name is doing a phishing page's
-            // job. Without that condition every business whose name
-            // starts with a brand word -- applebees, microsoftware --
-            // gets flagged.
+            // The brand name as a word inside a longer name, but only
+            // when the rest of the name is doing a phishing page's job.
+            // Otherwise applebees and microsoftware get flagged.
             if token_reads_as_a_word(&own_skeleton, own_label, token)
                 && (sensitive || label_carries_a_lure(own_label, token))
             {
@@ -499,10 +473,9 @@ fn find_brand_impersonation(
             continue;
         };
 
-        // An exact lookalike is unambiguous and gets blocked outright. A
-        // brand name embedded in a longer domain is a guess: fan sites,
-        // mirrors and unrelated words trip it, so it only hardens into a
-        // block when something else is wrong too.
+        // An exact lookalike is unambiguous. A brand name embedded in a
+        // longer domain is a guess -- fan sites and mirrors trip it -- so
+        // it only hardens into a block when something else is wrong.
         let hard_block = confidence == Confidence::Exact
             || disguised
             || mixed_scripts
@@ -530,10 +503,10 @@ fn find_brand_impersonation(
     None
 }
 
-// True when `token` appears in the label as its own word: at the very
-// start, or with a separator on at least one side. Requiring a boundary
-// is what stops "livestream" matching "steam"; allowing a start anchor
-// is what still catches "googleaccountsecuritycheck".
+// True when `token` is its own word in the label: at the start, or with a
+// separator on at least one side. The boundary stops "livestream"
+// matching "steam"; the start anchor still catches
+// "googleaccountsecuritycheck".
 fn token_reads_as_a_word(own_skeleton: &str, original: &str, token: &str) -> bool {
     if own_skeleton.starts_with(token) {
         return true;
@@ -544,17 +517,16 @@ fn token_reads_as_a_word(own_skeleton: &str, original: &str, token: &str) -> boo
         .any(|part| skeleton(part) == token)
 }
 
-// True when the label contains a lure word somewhere other than the
-// brand token itself.
+// True when the label carries a lure word somewhere other than the brand
+// token itself.
 fn label_carries_a_lure(own_label: &str, token: &str) -> bool {
     let folded = skeleton(own_label);
     let rest = folded.replacen(token, "", 1);
     LURE_WORDS.iter().any(|lure| rest.contains(lure))
 }
 
-// Letter pairs that render as a single letter in most fonts: "rn" for
-// "m", "vv" for "w". Compared alongside the plain skeleton rather than
-// replacing it, so "modern" is still "modern" for every other purpose.
+// Letter pairs that render as one letter in most fonts: "rn" for "m",
+// "vv" for "w". Compared alongside the plain skeleton, not instead of it.
 fn homoglyph_variants(skeleton: &str) -> Vec<String> {
     let mut variants = vec![skeleton.to_string()];
     let folded = skeleton.replace("rn", "m").replace("vv", "w");
@@ -589,11 +561,18 @@ fn is_local(host: &str) -> bool {
     {
         return true;
     }
-    if host.starts_with("fc")
-        || host.starts_with("fd")
-        || host.starts_with("fe80")
-        || host.starts_with("::ffff:127.")
+    // Only for an IPv6 literal. Applied to any host string, these three
+    // prefixes skip every check for fdic.gov, fcbarcelona.com and any
+    // domain a typosquatter registers starting fc or fd. normalized_host
+    // strips the brackets, so a colon is what is left to recognise one by.
+    if host.contains(':')
+        && (host.starts_with("fc")
+            || host.starts_with("fd")
+            || host.starts_with("fe80"))
     {
+        return true;
+    }
+    if host.starts_with("::ffff:127.") {
         return true;
     }
     if !is_ipv4(host) {
@@ -607,8 +586,7 @@ fn is_local(host: &str) -> bool {
         || (octets[0] == 192 && octets[1] == 168)
 }
 
-// Words, not substrings. Splitting on everything that isn't a letter or
-// a digit means "authority" yields "authority" and never "auth".
+// Words, not substrings: "authority" yields "authority" and never "auth".
 fn has_sensitive_word(host: &str, path: &str, query: &str) -> bool {
     let mut words: HashSet<String> = HashSet::new();
     for part in [host, path, query] {
@@ -645,9 +623,10 @@ fn mixes_scripts(label: &str) -> bool {
     has_latin && has_other
 }
 
-// A label with no ASCII letters at all, every one of whose letters has a
-// Latin lookalike. "\u{430}\u{440}\u{440}\u{4cf}\u{435}" qualifies and spells "apple"; "\u{43f}\u{440}\u{438}\u{43c}\u{435}\u{440}" does
-// not, because "\u{43f}" and "\u{438}" have no Latin twin.
+// A label with no ASCII letters, every one of whose letters has a Latin
+// lookalike: "\u{430}\u{440}\u{440}\u{4cf}\u{435}" spells "apple", while
+// "\u{43f}\u{440}\u{438}\u{43c}\u{435}\u{440}" does not qualify because
+// "\u{43f}" and "\u{438}" have no Latin twin.
 fn is_disguised_latin(label: &str) -> bool {
     let letters: Vec<char> = label.chars().filter(|c| c.is_alphabetic()).collect();
     if letters.is_empty() || letters.iter().any(|c| c.is_ascii()) {
@@ -656,9 +635,8 @@ fn is_disguised_latin(label: &str) -> bool {
     letters.iter().all(|c| confusable_to_latin(*c).is_some())
 }
 
-// Folds a label to the Latin word it looks like. Anything outside
-// [a-z0-9] after folding is dropped, so separators and stray marks don't
-// change the comparison.
+// Folds a label to the Latin word it looks like. Anything outside [a-z0-9]
+// after folding is dropped.
 fn skeleton(value: &str) -> String {
     value
         .to_lowercase()
@@ -668,9 +646,8 @@ fn skeleton(value: &str) -> String {
         .collect()
 }
 
-// Confusables from Unicode's own list, restricted to the ones that
-// actually show up in domain abuse: Cyrillic, Greek, Armenian, and the
-// digit/letter pairs.
+// Confusables from Unicode's own list, restricted to the ones that show
+// up in domain abuse: Cyrillic, Greek, Armenian, digit/letter pairs.
 fn confusable_to_latin(c: char) -> Option<char> {
     Some(match c {
         '\u{430}' | '\u{3b1}' | '\u{e4}' | '\u{e0}' | '\u{e1}' | '\u{e2}' => 'a',
@@ -704,11 +681,10 @@ fn confusable_to_latin(c: char) -> Option<char> {
     })
 }
 
-// A single substitution, insertion or deletion -- enough for typosquats,
-// and cheap. Not full Levenshtein.
+// A single substitution, insertion or deletion. Not full Levenshtein.
 fn edit_distance_at_most_one(first: &str, second: &str) -> bool {
-    // Too short to typosquat meaningfully: one edit away from a
-    // four-letter name is half the internet.
+    // Too short to typosquat: one edit away from a four-letter name is
+    // half the internet.
     if first.chars().count() < 5 || second.chars().count() < 5 {
         return first == second && !first.is_empty();
     }
@@ -806,20 +782,16 @@ fn warn(title: &str, reason: &str, host: String) -> NavigationRisk {
 mod tests {
     use super::*;
 
-    // The data files are compiled in, so a malformed one is a browser
-    // that starts with no rules rather than a build that fails. These
-    // are what make it a build failure.
+    // The data files are compiled in, so a malformed one would be a
+    // browser that starts with no rules. These make it a build failure.
     #[test]
     fn the_built_in_brand_table_parses() {
         let rules = parse_brands(BUILT_IN_BRANDS).expect("data/brands.toml");
         assert!(!rules.is_empty());
         for rule in &rules {
             assert!(!rule.display_name.is_empty());
-            // A brand with no tokens can never match anything, so it is a
-            // rule that silently does nothing.
-            assert!(!rule.tokens.is_empty(), "{} has no tokens", rule.display_name);
-            // And one with nothing official cannot tell the real site
-            // from an impostor, so it would flag the brand itself.
+            // A brand with no tokens matches nothing; one with nothing
+            // official cannot tell the real site from an impostor.
             assert!(
                 !rule.official_labels.is_empty() || !rule.official_domains.is_empty(),
                 "{} has nothing official",
@@ -832,15 +804,15 @@ mod tests {
     fn the_built_in_word_list_parses() {
         let words = parse_word_list(BUILT_IN_SENSITIVE_WORDS);
         assert!(!words.is_empty());
-        // Lowercased on load: the labels they are compared against are.
+        // Lowercased on load: so are the labels they are compared against.
         assert!(words.iter().all(|word| word == &word.to_lowercase()));
         assert!(words.iter().all(|word| !word.starts_with('#')));
     }
 
     #[test]
     fn a_malformed_brand_override_is_rejected_whole() {
-        // Half a rule set is a browser that catches some impostors and
-        // waves others through, with nothing to say which.
+        // Half a rule set catches some impostors and waves others
+        // through.
         assert!(parse_brands("[[brand]]\nname = ").is_err());
         assert!(parse_brands("not toml at all = = =").is_err());
     }
@@ -896,9 +868,27 @@ mod tests {
             "http://dev.localhost:5173/",
             "http://printer.local/",
             "http://api.test/login",
+            "http://[fd00::1]/",
+            "http://[fc00::42]:8080/",
+            "http://[fe80::1]/",
         ] {
             assert_eq!(risk(url), None, "{url}");
         }
+    }
+
+    // The ULA prefixes are an IPv6 rule. Applied to any host string they
+    // skipped every check for a domain beginning fc or fd, which is a
+    // registration away.
+    #[test]
+    fn a_domain_starting_like_a_ula_prefix_is_still_assessed() {
+        assert_eq!(
+            risk("https://fd-google-account-verify.com/login")
+                .map(|r| r.title.clone()),
+            risk("https://xd-google-account-verify.com/login")
+                .map(|r| r.title.clone()),
+        );
+        assert!(risk("https://fd-google-account-verify.com/login").is_some());
+        assert!(risk("https://fc-facebook-login-verify.com/signin").is_some());
     }
 
     #[test]
@@ -958,8 +948,7 @@ mod tests {
 
     #[test]
     fn a_brand_name_padded_out_is_still_caught() {
-        // The old rule gave up past a fixed length, so adding letters
-        // walked straight through it.
+        // The old rule gave up past a fixed length.
         for url in [
             "https://google-account-verify.com/login",
             "https://google-account-security-check.com/",

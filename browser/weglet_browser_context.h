@@ -1,6 +1,6 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// weglet/browser/weglet_browser_context.h
+// The browsing profile and the subsystems it does not enable.
 
 #ifndef WEGLET_BROWSER_WEGLET_BROWSER_CONTEXT_H_
 #define WEGLET_BROWSER_WEGLET_BROWSER_CONTEXT_H_
@@ -8,17 +8,19 @@
 #include <memory>
 
 #include "base/files/file_path.h"
+#include "components/client_hints/browser/in_memory_client_hints_controller_delegate.h"
 #include "content/public/browser/browser_context.h"
+#include "weglet/browser/weglet_download_manager_delegate.h"
+#include "weglet/browser/weglet_permission_delegate.h"
 
 namespace weglet {
 
-// One browsing profile: cookies, cache, storage, the lot. Everything on
-// disk hangs off the path this returns.
+// One browsing profile: cookies, cache, storage. Everything on disk hangs
+// off the path this returns.
 //
-// Almost every getter below returns nullptr. That is not laziness -- each
-// one is a subsystem the content layer treats as optional, and every one
-// we turn on is another thing that can talk to the network on its own.
-// They get added when there is a reason, one at a time.
+// Most getters below return nullptr on purpose. Each is an optional
+// subsystem, and each one turned on is another thing that can reach the
+// network by itself.
 class WegletBrowserContext : public content::BrowserContext {
  public:
   explicit WegletBrowserContext(bool off_the_record);
@@ -50,13 +52,27 @@ class WegletBrowserContext : public content::BrowserContext {
   content::ReduceAcceptLanguageControllerDelegate*
   GetReduceAcceptLanguageControllerDelegate() override;
 
+  // For the toolbar's site-info popup, which needs the concrete type --
+  // GetPermissionControllerDelegate() above only hands out the interface.
+  WegletPermissionDelegate* permission_delegate() { return &permission_delegate_; }
+
  private:
   // %LOCALAPPDATA%\Weglet on Windows, the XDG data dir elsewhere. Chosen
-  // once in the constructor so every caller agrees on it.
+  // once in the constructor.
   static base::FilePath DefaultProfilePath();
 
   const bool off_the_record_;
   base::FilePath path_;
+
+  // In-memory only: remembers which origins asked for which Client
+  // Hints (Accept-CH/Critical-CH). Without this a site's Critical-CH
+  // retry never sees the hint it asked for and never converges.
+  client_hints::InMemoryClientHintsControllerDelegate client_hints_delegate_;
+  WegletPermissionDelegate permission_delegate_;
+  // Not nullptr like the rest of this file: Ctrl+S needs somewhere to ask
+  // for a save path. It reaches no network itself -- see
+  // WegletDownloadManagerDelegate's own comment.
+  WegletDownloadManagerDelegate download_manager_delegate_;
 };
 
 }  // namespace weglet

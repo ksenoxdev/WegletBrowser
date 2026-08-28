@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<!-- Copyright 2026 Weglet - Licensed under Apache 2.0
+
+     The dropdown opened by the toolbar's "⋮" button -- its own floating
+     popup, not DOM inside the toolbar's own page: see WegletMenuPopup and
+     WegletShortcutPopup for why. Structure only; filled in and wired by
+     menu.ts.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Menu</title>
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="base.css" />
+    <link rel="stylesheet" href="menu.css" />
+  </head>
+  <body>
+    <button class="menu-item" id="menu-settings">
+      <span class="menu-icon" id="menu-settings-icon"></span>
+      <span data-i18n="menu.settings">Settings</span>
+    </button>
+    <button class="menu-item" id="menu-history">
+      <span class="menu-icon" id="menu-history-icon"></span>
+      <span data-i18n="menu.history">History</span>
+    </button>
+    <button class="menu-item" id="menu-bookmarks">
+      <span class="menu-icon" id="menu-bookmarks-icon"></span>
+      <span data-i18n="menu.viewBookmarks">View bookmarks</span>
+    </button>
+    <script type="module" src="menu.js"></script>
+  </body>
+</html>

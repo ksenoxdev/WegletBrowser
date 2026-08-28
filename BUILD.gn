@@ -1,10 +1,7 @@
 # Copyright 2026 Weglet - Licensed under Apache 2.0
 #
-# weglet/BUILD.gn
-#
-# Everything Weglet adds to Chromium lives under this directory. Nothing
-# outside it is modified, so `git status` in the Chromium tree stays
-# clean and rebasing onto a new Chromium release is a fetch, not a merge.
+# Everything Weglet adds to Chromium lives under this directory, so
+# rebasing onto a new Chromium release is a fetch, not a merge.
 
 import("//build/config/ui.gni")
 import("//testing/test.gni")
@@ -26,8 +23,7 @@ executable("weglet") {
     configs += [ "//build/config/win:windowed" ]
     deps += [
       # content::InitializeSandboxInfo lives here, not in
-      # //content/public/app. Without it the renderer would start
-      # unsandboxed -- and in fact the link just fails.
+      # //content/public/app. Without it the link fails.
       "//content:sandbox_helper_win",
       "//sandbox/win:sandbox",
     ]
@@ -36,17 +32,15 @@ executable("weglet") {
   data_deps = [
     ":weglet_pak",
 
-    # Not a build input -- it produces nothing the binary uses. It is here
-    # so the comparison actually runs: a resource pack Chromium started
-    # expecting is otherwise found by a CHECK at startup.
+    # Not a build input: it is here so the comparison runs. A resource
+    # pack Chromium started expecting is otherwise found by a CHECK at
+    # startup.
     ":check_pak",
 
-    # Says which Chromium tree this is. A warning by default -- see
-    # check_chromium_version.py.
+    # Says which Chromium tree this is. A warning by default.
     ":check_chromium_version",
 
-    # Neither produces anything the binary uses; both are here so they
-    # actually run.
+    # Neither produces anything the binary uses; both are here so they run.
     ":check_generators",
     ":check_ui",
   ]
@@ -64,12 +58,40 @@ source_set("weglet_lib") {
     "browser/weglet_browser_main_parts.h",
     "browser/weglet_content_browser_client.cc",
     "browser/weglet_content_browser_client.h",
+    "browser/weglet_context_menu.cc",
+    "browser/weglet_context_menu.h",
+    "browser/weglet_devtools_bindings.cc",
+    "browser/weglet_devtools_bindings.h",
+    "browser/weglet_devtools_manager_delegate.cc",
+    "browser/weglet_devtools_manager_delegate.h",
+    "browser/weglet_download_manager_delegate.cc",
+    "browser/weglet_download_manager_delegate.h",
+    "browser/weglet_download_observer.cc",
+    "browser/weglet_download_observer.h",
+    "browser/weglet_file_select_helper.cc",
+    "browser/weglet_file_select_helper.h",
+    "browser/weglet_find_bar.cc",
+    "browser/weglet_find_bar.h",
+    "browser/weglet_frame_view.cc",
+    "browser/weglet_frame_view.h",
+    "browser/weglet_menu_popup.cc",
+    "browser/weglet_menu_popup.h",
     "browser/weglet_message_handler.cc",
     "browser/weglet_message_handler.h",
     "browser/weglet_navigation_throttle.cc",
     "browser/weglet_navigation_throttle.h",
+    "browser/weglet_permission_delegate.cc",
+    "browser/weglet_permission_delegate.h",
+    "browser/weglet_permission_prompt.cc",
+    "browser/weglet_permission_prompt.h",
     "browser/weglet_security_guard.cc",
     "browser/weglet_security_guard.h",
+    "browser/weglet_shortcut_popup.cc",
+    "browser/weglet_shortcut_popup.h",
+    "browser/weglet_site_info_popup.cc",
+    "browser/weglet_site_info_popup.h",
+    "browser/weglet_spell_check_host.cc",
+    "browser/weglet_spell_check_host.h",
     "browser/weglet_state_service.cc",
     "browser/weglet_state_service.h",
     "browser/weglet_tab_observer.cc",
@@ -85,30 +107,63 @@ source_set("weglet_lib") {
     "common/weglet_host.h",
     "renderer/weglet_content_renderer_client.cc",
     "renderer/weglet_content_renderer_client.h",
+    "renderer/weglet_loadtimes_bindings.cc",
+    "renderer/weglet_loadtimes_bindings.h",
+    "renderer/weglet_render_frame_observer.cc",
+    "renderer/weglet_render_frame_observer.h",
+
+    # The Windows-native half of spellcheck, pulled in directly rather than
+    # depending on //components/spellcheck/browser -- that target's deps
+    # reach //components/enterprise/connectors/core, which links an
+    # in-tree Rust crate and collides at link time with weglet_ffi's own
+    # cargo-built Rust std. See weglet_spell_check_host.h.
+    "//components/spellcheck/browser/platform_spell_checker.h",
+    "//components/spellcheck/browser/spellcheck_host_metrics.cc",
+    "//components/spellcheck/browser/spellcheck_host_metrics.h",
+    "//components/spellcheck/browser/spellcheck_platform.h",
+    "//components/spellcheck/browser/spellcheck_platform_win.cc",
+    "//components/spellcheck/browser/windows_spell_checker.cc",
+    "//components/spellcheck/browser/windows_spell_checker.h",
   ]
 
   deps = [
-    # The interface: design tokens, TypeScript, and the pages embedded in the
-    # binary -- see ui/BUILD.gn.
+    # Design tokens, TypeScript and the embedded pages -- see ui/BUILD.gn.
     "ui",
 
     # The browser's own logic: tabs, history, omnibox, profile, security.
-    # Built by cargo, linked here -- see rust/BUILD.gn.
+    # Built by cargo -- see rust/BUILD.gn.
     "rust:weglet_ffi",
     "//base",
+    "//components/client_hints/browser:in_memory",
+    "//components/download/public/common:public",
     "//components/embedder_support:user_agent",
+    # Spellcheck -- see WegletSpellCheckHost and
+    # WegletContentRendererClient's SpellCheckProvider wiring. Not
+    # //components/spellcheck/browser itself -- see the comment by its
+    # files further up in sources.
+    "//components/spellcheck/common",
+    "//components/spellcheck/renderer",
+    # Ctrl+/Ctrl-/Ctrl+0 -- see WegletWindow::ZoomActiveTab.
+    "//components/zoom",
     "//content/public/browser",
     "//content/public/common",
     "//content/public/renderer",
+    # window.chrome.loadTimes()/csi() -- see weglet_loadtimes_bindings.cc.
+    "//gin",
     "//net",
+    # SimpleURLLoader, for the threat feed fetch -- see weglet_bridge.cc.
+    "//services/network/public/cpp",
+    "//third_party/blink/public:blink",
     "//ui/base",
     "//ui/display",
+    # The native file-picker dialog behind <input type=file> -- see
+    # weglet_file_select_helper.cc.
+    "//ui/shell_dialogs",
     "//url",
   ]
 
-  # Chromium on desktop draws through Aura, so a WebContents cannot be
-  # parented to a bare HWND -- it needs a views::Widget to live in. This
-  # is the same route content_shell takes on desktop.
+  # Chromium on desktop draws through Aura, so a WebContents needs a
+  # views::Widget to live in. The same route content_shell takes.
   if (use_aura) {
     deps += [
       "//ui/aura",
@@ -123,7 +178,6 @@ source_set("weglet_lib") {
 # Unit tests. Run with: ninja -C out/Default weglet_unittests &&
 # out/Default/weglet_unittests
 #
-# The generated contract is checked from the side that consumes it --
 # generators_test.py checks that the generator writes the right text; this
 # checks that the text means the right thing once compiled.
 test("weglet_unittests") {
@@ -137,11 +191,9 @@ test("weglet_unittests") {
   ]
 }
 
-# The generators are the mechanism that keeps four languages saying the
-# same thing, and they had no tests at all -- their only self-check was a
-# duplicate-name test. A mistake in contract.json or tokens.json does not
-# fail in those scripts; it produces generated C++ that fails to compile
-# with an error pointing at a file nobody wrote.
+# A mistake in contract.json or tokens.json does not fail in the
+# generators; it produces generated C++ that fails to compile with an
+# error pointing at a file nobody wrote.
 action("check_generators") {
   script = "ui/generators_test.py"
   inputs = [
@@ -157,15 +209,12 @@ action("check_generators") {
   ]
 }
 
-# protocol.ts validates every push before a page acts on it, and that is
-# the code deciding whether a malformed message is a dropped update or an
-# exception halfway through rendering the tab strip. Run under the same
-# vendored node build_ui.py compiles with -- no npm, no node_modules.
+# protocol.ts validates every push before a page acts on it. Run under the
+# same vendored node build_ui.py compiles with -- no npm, no node_modules.
 action("check_ui") {
   script = "ui/run_ui_tests.py"
-  # Coarse on purpose, the same way ui/BUILD.gn's build_ui action is: a
-  # depfile listing every .ts would be a second copy of the source list to
-  # keep in step. Editing a page re-runs these; that is cheap.
+  # Coarse on purpose, like ui/BUILD.gn's build_ui action: a depfile
+  # listing every .ts would be a second copy of the source list.
   inputs = [
     "build_support.py",
     "ui/contract.json",
@@ -202,8 +251,7 @@ action("check_chromium_version") {
 }
 
 # Keeps weglet_pak's hand-written list honest against the one it was
-# trimmed from. See check_pak.py -- the differences are deliberate and
-# declared there, so a new one is a build failure with a name in it.
+# trimmed from. See check_pak.py.
 action("check_pak") {
   script = "check_pak.py"
   inputs = [
@@ -224,17 +272,17 @@ action("check_pak") {
   ]
 }
 
-# Without a resource pack, startup trips on the first string or image
-# the content layer asks ResourceBundle for.
+# Without a resource pack, startup trips on the first string or image the
+# content layer asks ResourceBundle for.
 #
-# Taken from content/shell's own "pak" target and trimmed: the shell's
-# own resources, its web-ui test resources and the ukm debug page are
-# not ours. Whenever Chromium is updated, diff this against
-# content/shell/BUILD.gn - a resource added there is usually one the
-# content layer now expects everyone to have.
+# Taken from content/shell's own "pak" target and trimmed. Whenever
+# Chromium is updated, diff this against content/shell/BUILD.gn -- a
+# resource added there is usually one the content layer now expects every
+# embedder to have.
 repack("weglet_pak") {
   sources = [
     "$root_gen_dir/base/tracing/protos/tracing_proto_resources.pak",
+    "$root_gen_dir/content/browser/devtools/devtools_resources.pak",
     "$root_gen_dir/content/browser/resources/media/media_internals_resources.pak",
     "$root_gen_dir/content/browser/webrtc/resources/webrtc_internals_resources.pak",
     "$root_gen_dir/content/content_resources.pak",
@@ -263,6 +311,7 @@ repack("weglet_pak") {
   deps = [
     "//base/tracing/protos:chrome_track_event_resources",
     "//content:content_resources",
+    "//content/browser/devtools:devtools_resources",
     "//content/browser/resources",
     "//content/browser/resources/media:resources",
     "//content/browser/webrtc/resources",
@@ -287,14 +336,10 @@ repack("weglet_pak") {
     ]
   }
 
-  # The window is a views::Widget on every desktop platform -- see the
-  # use_aura block in weglet_lib above -- and views has resources of its
-  # own. content/shell guards the same two lines with
-  # shell_use_toolkit_views; the condition here is use_aura because that
-  # is what decides whether Weglet links views at all.
-  #
-  # Without this the first image views asks ResourceBundle for is not
-  # there, which is the failure this whole target exists to prevent.
+  # The window is a views::Widget on every desktop platform, and views has
+  # resources of its own. content/shell guards the same two lines with
+  # shell_use_toolkit_views; the condition here is use_aura, which is what
+  # decides whether Weglet links views at all.
   if (use_aura) {
     deps += [ "//ui/views/resources" ]
     sources +=

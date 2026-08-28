@@ -1,156 +1,18 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// rust/weglet-ffi/tests/boundary.rs
-//
 // The boundary driven the way C++ drives it: create a state, call entry
-// points on it in sequence, free it.
+// points in sequence, free it. A mistake here is undefined behaviour in
+// the browser process rather than a failed assertion.
 //
-// The unit tests inside the crate cover the string helpers. Nothing
-// covered the entry points themselves, which is where a mistake is
-// undefined behaviour in the browser process rather than a failed
-// assertion -- a returned pointer never freed, an index read past the
-// end, an out-param left holding whatever it held before.
+// Every test goes through `guard()`: the profile path comes from an
+// environment variable, and cargo runs tests as threads in one process.
 //
-// Every test here goes through `guard()`. The profile path comes from an
-// environment variable, and cargo runs tests as threads in one process,
-// so two of them setting it at once would have each other's directory.
+// A test that installs a profile blocklist override lives in its own
+// file (blocklist_override.rs), not here -- see tests/common/mod.rs for
+// why.
 
-use std::ffi::{c_char, CStr, CString};
-use std::sync::{Mutex, MutexGuard, OnceLock};
-
-// The public surface, bound exactly as weglet_ffi.h declares it.
-//
-// Each constant below is the real function stored in a variable whose
-// type is written out by hand from the header. A signature that drifts
-// from the header is a compile error here, and calling through these
-// bindings is also what makes the linker keep the `#[no_mangle]` symbols
-// the browser will look for.
-#[allow(non_snake_case, non_upper_case_globals)]
-mod abi {
-    use std::ffi::c_char;
-    use weglet_ffi::WegletState;
-
-    pub const state_new: extern "C" fn() -> *mut WegletState = weglet_ffi::weglet_state_new;
-    pub const state_free: unsafe extern "C" fn(*mut WegletState) = weglet_ffi::weglet_state_free;
-    pub const string_free: unsafe extern "C" fn(*mut c_char) = weglet_ffi::weglet_string_free;
-
-    pub const window_count: unsafe extern "C" fn(*const WegletState) -> usize =
-        weglet_ffi::weglet_window_count;
-    pub const window_id_at: unsafe extern "C" fn(*const WegletState, usize) -> u64 =
-        weglet_ffi::weglet_window_id_at;
-    pub const open_window: unsafe extern "C" fn(*mut WegletState) -> u64 =
-        weglet_ffi::weglet_open_window;
-    pub const close_window: unsafe extern "C" fn(*mut WegletState, u64) -> bool =
-        weglet_ffi::weglet_close_window;
-    pub const tab_window: unsafe extern "C" fn(*const WegletState, u64) -> u64 =
-        weglet_ffi::weglet_tab_window;
-
-    pub const tab_count: unsafe extern "C" fn(*const WegletState, u64) -> usize =
-        weglet_ffi::weglet_tab_count;
-    pub const tab_id_at: unsafe extern "C" fn(*const WegletState, u64, usize) -> u64 =
-        weglet_ffi::weglet_tab_id_at;
-    pub const active_tab_id: unsafe extern "C" fn(*const WegletState, u64) -> u64 =
-        weglet_ffi::weglet_active_tab_id;
-    pub const tab_url: unsafe extern "C" fn(*const WegletState, u64) -> *mut c_char =
-        weglet_ffi::weglet_tab_url;
-    pub const tab_label: unsafe extern "C" fn(*const WegletState, u64) -> *mut c_char =
-        weglet_ffi::weglet_tab_label;
-    pub const open_tab: unsafe extern "C" fn(*mut WegletState, u64, *const c_char) -> u64 =
-        weglet_ffi::weglet_open_tab;
-    pub const close_tab: unsafe extern "C" fn(*mut WegletState, u64) -> bool =
-        weglet_ffi::weglet_close_tab;
-    pub const tab_navigated: unsafe extern "C" fn(*mut WegletState, u64, *const c_char) =
-        weglet_ffi::weglet_tab_navigated;
-    pub const tab_go_back: unsafe extern "C" fn(*mut WegletState, u64) -> *mut c_char =
-        weglet_ffi::weglet_tab_go_back;
-
-    pub const omnibox_resolve: unsafe extern "C" fn(
-        *const WegletState,
-        *const c_char,
-    ) -> *mut c_char = weglet_ffi::weglet_omnibox_resolve;
-
-    pub const assess_navigation: unsafe extern "C" fn(
-        *const c_char,
-        *mut *mut c_char,
-        *mut *mut c_char,
-        *mut *mut c_char,
-    ) -> u32 = weglet_ffi::weglet_assess_navigation;
-
-    pub const block_host: unsafe extern "C" fn(*mut WegletState, *const c_char) -> bool =
-        weglet_ffi::weglet_block_host;
-    pub const unblock_host: unsafe extern "C" fn(*mut WegletState, usize) -> bool =
-        weglet_ffi::weglet_unblock_host;
-    pub const blocked_host_count: unsafe extern "C" fn(*const WegletState) -> usize =
-        weglet_ffi::weglet_blocked_host_count;
-    pub const blocked_host_at: unsafe extern "C" fn(*const WegletState, usize) -> *mut c_char =
-        weglet_ffi::weglet_blocked_host_at;
-    pub const is_url_blocked: unsafe extern "C" fn(
-        *const WegletState,
-        *const c_char,
-        *mut *mut c_char,
-        *mut *mut c_char,
-    ) -> bool = weglet_ffi::weglet_is_url_blocked;
-    pub const is_host_blocked: unsafe extern "C" fn(*const WegletState, *const c_char) -> bool =
-        weglet_ffi::weglet_is_host_blocked;
-
-    pub const set_accent_color: unsafe extern "C" fn(*mut WegletState, *const c_char) -> bool =
-        weglet_ffi::weglet_set_accent_color;
-    pub const accent_color: unsafe extern "C" fn(*const WegletState) -> *mut c_char =
-        weglet_ffi::weglet_accent_color;
-    pub const settings_dirty: unsafe extern "C" fn(*const WegletState) -> bool =
-        weglet_ffi::weglet_settings_dirty;
-    pub const flush_settings: unsafe extern "C" fn(*mut WegletState) -> bool =
-        weglet_ffi::weglet_flush_settings;
-
-    pub const engine_count: extern "C" fn() -> usize = weglet_ffi::weglet_engine_count;
-    pub const engine_id_at: unsafe extern "C" fn(usize) -> *mut c_char =
-        weglet_ffi::weglet_engine_id_at;
-    pub const set_search_engine: unsafe extern "C" fn(*mut WegletState, *const c_char) -> bool =
-        weglet_ffi::weglet_set_search_engine;
-}
-
-fn lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
-
-struct Fixture {
-    _guard: MutexGuard<'static, ()>,
-    dir: std::path::PathBuf,
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.dir);
-    }
-}
-
-// A private profile directory, held for the duration of one test.
-fn guard(name: &str) -> Fixture {
-    let mutex = lock();
-    // A panicking test must not make every later one fail on a poisoned
-    // lock -- the directory is fresh either way.
-    let g = mutex.lock().unwrap_or_else(|e| e.into_inner());
-    let dir = std::env::temp_dir().join(format!("weglet-ffi-{name}"));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    std::env::set_var("XDG_DATA_HOME", &dir);
-    std::env::set_var("LOCALAPPDATA", &dir);
-    Fixture { _guard: g, dir }
-}
-
-// Takes ownership the way WegletBridge::TakeString does, so a leak here
-// would be a leak there.
-fn take(raw: *mut c_char) -> String {
-    assert!(!raw.is_null(), "the boundary must never return null");
-    let value = unsafe { CStr::from_ptr(raw) }.to_string_lossy().into_owned();
-    unsafe { abi::string_free(raw) };
-    value
-}
-
-fn c(value: &str) -> CString {
-    CString::new(value).unwrap()
-}
+mod common;
+use common::{abi, c, guard, take};
 
 #[test]
 fn a_fresh_state_has_one_blank_tab() {
@@ -233,7 +95,7 @@ fn the_omnibox_resolves_through_the_configured_engine() {
     );
 
     // Every id the engine list offers has to be one set_search_engine
-    // accepts, or the settings page can offer a choice that does nothing.
+    // accepts.
     for index in 0..abi::engine_count() {
         let id = take(unsafe { abi::engine_id_at(index) });
         assert!(
@@ -266,7 +128,7 @@ fn one_assessment_fills_every_out_param() {
 }
 
 // The out-params are written even when there is no risk, so a caller
-// cannot read whatever the pointer held before the call.
+// cannot read whatever the pointer held.
 #[test]
 fn a_safe_url_still_writes_empty_strings() {
     let _f = guard("risk-none");
@@ -317,8 +179,7 @@ fn a_blocked_host_is_blocked_however_the_url_spells_it() {
         "https://evil.example/",
         "https://sub.evil.example/path",
         "http://EVIL.EXAMPLE:8080/",
-        // The host is what follows the last '@', so this is evil.example
-        // and not example.com.
+        // The host is what follows the last '@', so this is evil.example.
         "https://example.com@evil.example/",
     ] {
         assert!(
@@ -407,34 +268,6 @@ fn windows_hold_their_own_tabs_and_their_own_active_one() {
     unsafe { abi::state_free(state) };
 }
 
-// The four optional data files a profile may carry. Present means the
-// user's own list replaces the built-in one; absent is the normal case.
-#[test]
-fn a_profile_can_supply_its_own_blocklist() {
-    let f = guard("override");
-    let profile = f.dir.join("Weglet").join("Default");
-    std::fs::create_dir_all(&profile).unwrap();
-    std::fs::write(
-        profile.join("blocklist.txt"),
-        "# mine\nnot-doubleclick.example\n",
-    )
-    .unwrap();
-
-    let state = abi::state_new();
-    // Replaces rather than extends: someone who supplies a list has a
-    // reason, and silently keeping entries they removed would defeat it.
-    assert!(unsafe {
-        abi::is_url_blocked(
-            state,
-            c("https://not-doubleclick.example/").as_ptr(),
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-        )
-    });
-    assert!(!unsafe { abi::is_host_blocked(state, c("stats.doubleclick.net").as_ptr()) });
-    unsafe { abi::state_free(state) };
-}
-
 // The whole point of deferring: changing a setting must not write.
 #[test]
 fn settings_are_marked_dirty_and_written_only_on_flush() {
@@ -475,5 +308,201 @@ fn a_rejected_setting_does_not_mark_anything_dirty() {
     assert!(!unsafe { abi::set_accent_color(state, c("not-a-colour").as_ptr()) });
     assert_eq!(take(unsafe { abi::accent_color(state) }), before);
     assert!(!unsafe { abi::settings_dirty(state) });
+    unsafe { abi::state_free(state) };
+}
+
+#[test]
+fn language_round_trips_through_flush() {
+    let f = guard("language");
+    let state = abi::state_new();
+
+    assert_eq!(take(unsafe { abi::language(state) }), "en");
+    assert!(unsafe { abi::set_language(state, c("ru").as_ptr()) });
+    assert_eq!(take(unsafe { abi::language(state) }), "ru");
+    assert!(unsafe { abi::flush_settings(state) });
+    unsafe { abi::state_free(state) };
+
+    let state = abi::state_new();
+    assert_eq!(take(unsafe { abi::language(state) }), "ru");
+    unsafe { abi::state_free(state) };
+}
+
+#[test]
+fn an_invalid_language_is_rejected() {
+    let _f = guard("language-reject");
+    let state = abi::state_new();
+    let before = take(unsafe { abi::language(state) });
+    assert!(!unsafe { abi::set_language(state, c("!!").as_ptr()) });
+    assert_eq!(take(unsafe { abi::language(state) }), before);
+    assert!(!unsafe { abi::settings_dirty(state) });
+    unsafe { abi::state_free(state) };
+}
+
+#[test]
+fn toggling_a_bookmark_adds_it_and_toggling_again_removes_it() {
+    let _f = guard("bookmarks");
+    let state = abi::state_new();
+
+    assert!(!unsafe { abi::is_bookmarked(state, c("https://a.example").as_ptr()) });
+    assert!(unsafe {
+        abi::toggle_bookmark(state, c("A").as_ptr(), c("https://a.example").as_ptr())
+    });
+    assert_eq!(unsafe { abi::bookmark_count(state) }, 1);
+    assert!(unsafe { abi::is_bookmarked(state, c("https://a.example").as_ptr()) });
+    assert_eq!(take(unsafe { abi::bookmark_title_at(state, 0) }), "A");
+    assert_eq!(
+        take(unsafe { abi::bookmark_url_at(state, 0) }),
+        "https://a.example"
+    );
+
+    assert!(!unsafe {
+        abi::toggle_bookmark(state, c("A").as_ptr(), c("https://a.example").as_ptr())
+    });
+    assert_eq!(unsafe { abi::bookmark_count(state) }, 0);
+    unsafe { abi::state_free(state) };
+}
+
+#[test]
+fn removing_a_bookmark_by_index_drops_only_that_one() {
+    let _f = guard("bookmarks-remove");
+    let state = abi::state_new();
+    unsafe {
+        abi::toggle_bookmark(state, c("A").as_ptr(), c("https://a.example").as_ptr());
+        abi::toggle_bookmark(state, c("B").as_ptr(), c("https://b.example").as_ptr());
+    }
+    assert!(unsafe { abi::remove_bookmark(state, 0) });
+    assert_eq!(unsafe { abi::bookmark_count(state) }, 1);
+    assert_eq!(
+        take(unsafe { abi::bookmark_url_at(state, 0) }),
+        "https://b.example"
+    );
+    assert!(!unsafe { abi::remove_bookmark(state, 99) });
+    unsafe { abi::state_free(state) };
+}
+
+#[test]
+fn bookmarks_round_trip_through_a_flush_and_a_fresh_state() {
+    let f = guard("bookmarks-flush");
+    let state = abi::state_new();
+    unsafe {
+        abi::toggle_bookmark(state, c("A").as_ptr(), c("https://a.example").as_ptr());
+        abi::flush_settings(state);
+        abi::state_free(state);
+    }
+    assert!(f
+        .dir
+        .join("Weglet")
+        .join("Default")
+        .join("bookmarks.toml")
+        .exists());
+
+    let state = abi::state_new();
+    assert_eq!(unsafe { abi::bookmark_count(state) }, 1);
+    unsafe { abi::state_free(state) };
+}
+
+#[test]
+fn recorded_history_is_newest_first_and_clear_empties_it() {
+    let _f = guard("history");
+    let state = abi::state_new();
+    unsafe {
+        abi::record_history(state, c("cats").as_ptr(), c("https://ddg.example/?q=cats").as_ptr());
+        abi::record_history(state, c("dogs").as_ptr(), c("https://ddg.example/?q=dogs").as_ptr());
+    }
+    assert_eq!(unsafe { abi::history_count(state) }, 2);
+    assert_eq!(take(unsafe { abi::history_query_at(state, 0) }), "dogs");
+    assert_eq!(take(unsafe { abi::history_query_at(state, 1) }), "cats");
+    assert!(unsafe { abi::history_visited_at_at(state, 0) } > 0);
+
+    unsafe { abi::clear_search_history(state) };
+    assert_eq!(unsafe { abi::history_count(state) }, 0);
+    unsafe { abi::state_free(state) };
+}
+
+#[test]
+fn a_download_moves_from_in_progress_to_completed() {
+    let _f = guard("downloads");
+    let state = abi::state_new();
+    let url = c("https://example.com/a.zip");
+
+    unsafe { abi::download_started(state, url.as_ptr(), c("/tmp/a.zip").as_ptr()) };
+    assert_eq!(unsafe { abi::download_count(state) }, 1);
+    assert_eq!(unsafe { abi::download_status_at(state, 0) }, 0);
+
+    unsafe { abi::download_progress(state, url.as_ptr(), 1024, 4096) };
+    assert_eq!(
+        take(unsafe { abi::download_size_label_at(state, 0) }),
+        "1.0 KB of 4.0 KB"
+    );
+
+    unsafe { abi::download_completed(state, url.as_ptr(), 4096) };
+    assert_eq!(unsafe { abi::download_status_at(state, 0) }, 1);
+    assert_eq!(take(unsafe { abi::download_size_label_at(state, 0) }), "4.0 KB");
+    unsafe { abi::state_free(state) };
+}
+
+#[test]
+fn a_failed_download_carries_the_real_error_message() {
+    let _f = guard("downloads-failed");
+    let state = abi::state_new();
+    let url = c("https://example.com/b.zip");
+    unsafe {
+        abi::download_started(state, url.as_ptr(), c("/tmp/b.zip").as_ptr());
+        abi::download_failed(state, url.as_ptr(), c("Server returned an error (HTTP 404)").as_ptr());
+    }
+    assert_eq!(unsafe { abi::download_status_at(state, 0) }, 2);
+    assert_eq!(
+        take(unsafe { abi::download_error_message_at(state, 0) }),
+        "Server returned an error (HTTP 404)"
+    );
+    unsafe { abi::clear_download_history(state) };
+    assert_eq!(unsafe { abi::download_count(state) }, 0);
+    unsafe { abi::state_free(state) };
+}
+
+#[test]
+fn a_download_still_in_progress_when_the_browser_closes_is_orphaned_on_restart() {
+    let f = guard("downloads-orphan");
+    let state = abi::state_new();
+    unsafe {
+        abi::download_started(state, c("https://example.com/c.zip").as_ptr(), c("/tmp/c.zip").as_ptr());
+        abi::flush_settings(state);
+        abi::state_free(state);
+    }
+    assert!(f
+        .dir
+        .join("Weglet")
+        .join("Default")
+        .join("downloads.toml")
+        .exists());
+
+    let state = abi::state_new();
+    assert_eq!(unsafe { abi::download_status_at(state, 0) }, 2);
+    assert_eq!(
+        take(unsafe { abi::download_error_message_at(state, 0) }),
+        "Interrupted"
+    );
+    unsafe { abi::state_free(state) };
+}
+
+#[test]
+fn threat_feed_enabled_defaults_to_on_and_the_setting_persists() {
+    let _f = guard("threat-feed-setting");
+    let state = abi::state_new();
+    assert!(unsafe { abi::threat_feed_enabled(state) });
+    unsafe { abi::set_threat_feed_enabled(state, false) };
+    assert!(!unsafe { abi::threat_feed_enabled(state) });
+    assert!(unsafe { abi::settings_dirty(state) });
+    unsafe { abi::state_free(state) };
+}
+
+#[test]
+fn favicons_enabled_defaults_to_off_and_the_setting_persists() {
+    let _f = guard("favicons-setting");
+    let state = abi::state_new();
+    assert!(!unsafe { abi::favicons_enabled(state) });
+    unsafe { abi::set_favicons_enabled(state, true) };
+    assert!(unsafe { abi::favicons_enabled(state) });
+    assert!(unsafe { abi::settings_dirty(state) });
     unsafe { abi::state_free(state) };
 }

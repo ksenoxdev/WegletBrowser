@@ -1,0 +1,111 @@
+/* Copyright 2026 Weglet - Licensed under Apache 2.0
+ *
+ * A small floating popup -- see menu.css. Its whole window is exactly
+ * this card, so there is no outer scroll region.
+ */
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--color-surface-raised);
+}
+
+body {
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-popup);
+  box-sizing: border-box;
+  color: var(--color-text);
+  font-family: "Instrument Sans", sans-serif;
+  padding: var(--space-xl);
+}
+
+.shield-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin-bottom: var(--space-sm);
+}
+
+.shield-icon {
+  color: var(--color-ring);
+  display: flex;
+}
+
+.shield-title {
+  font-family: "Outfit", sans-serif;
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-md);
+}
+
+.shield-body {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-dim);
+}
+
+.origin {
+  font-family: "Outfit", sans-serif;
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-md);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-bottom: var(--space-md);
+}
+
+.permissions {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.permission-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.permission-label {
+  flex: 1;
+  font-size: var(--font-size-sm);
+}
+
+/* Same switch as settings.css's -- copied rather than shared, like the
+   rest of this popup's styling. */
+.toggle {
+  width: var(--layout-toggle-width);
+  height: var(--layout-toggle-height);
+  border-radius: var(--radius-pill);
+  background: var(--color-field);
+  border: 1px solid var(--color-border);
+  position: relative;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--motion-fast), border-color var(--motion-fast);
+}
+
+.toggle::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: var(--layout-toggle-knob);
+  height: var(--layout-toggle-knob);
+  border-radius: 50%;
+  background: var(--color-text-dim);
+  transition: transform var(--motion-fast), background var(--motion-fast);
+}
+
+.toggle.on {
+  background: color-mix(in srgb, var(--color-ring) 40%, transparent);
+  border-color: var(--color-ring);
+}
+
+.toggle.on::after {
+  background: var(--color-text);
+  transform: translateX(var(--layout-toggle-travel));
+}

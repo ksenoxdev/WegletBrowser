@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<!-- Copyright 2026 Weglet - Licensed under Apache 2.0
+
+     Ctrl+F's floating bar -- its own popup, not DOM inside the toolbar's
+     own page: see WegletFindBar. Structure only; filled in and wired by
+     find_bar.ts.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Find</title>
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="base.css" />
+    <link rel="stylesheet" href="find_bar.css" />
+  </head>
+  <body>
+    <input
+      id="find-input"
+      type="text"
+      autocomplete="off"
+      spellcheck="false"
+      data-i18n-placeholder="findBar.placeholder"
+    />
+    <span id="find-count" class="find-count"></span>
+    <button id="find-previous" class="find-btn" data-i18n-title="findBar.previous"></button>
+    <button id="find-next" class="find-btn" data-i18n-title="findBar.next"></button>
+    <button id="find-close" class="find-btn" data-i18n-title="findBar.close"></button>
+    <script type="module" src="find_bar.js"></script>
+  </body>
+</html>

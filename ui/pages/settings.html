@@ -10,13 +10,14 @@
     <title>Settings</title>
     <link rel="stylesheet" href="tokens.css" />
     <link rel="stylesheet" href="base.css" />
+    <link rel="stylesheet" href="modal.css" />
     <link rel="stylesheet" href="settings.css" />
   </head>
   <body>
     <div class="page">
       <div class="header">
-        <h1>Settings</h1>
-        <button class="done" id="done">Done</button>
+        <h1 data-i18n="settings.title">Settings</h1>
+        <button class="done" id="done" data-i18n="settings.done">Done</button>
       </div>
 
       <!-- A tablist, and the panels below are its tabpanels. The switcher
@@ -24,23 +25,23 @@
            same thing a tab strip is. -->
       <div class="switcher" id="switcher" role="tablist" aria-label="Settings sections">
         <div class="switcher-pill" id="switcher-pill" aria-hidden="true"></div>
-        <div class="switcher-tab active" id="tab-search" data-panel="search" role="tab" tabindex="0">
+        <div class="switcher-tab active" id="tab-search" data-panel="search" role="tab" tabindex="0" data-i18n="settings.tab.search">
           Search
         </div>
-        <div class="switcher-tab" id="tab-general" data-panel="general" role="tab" tabindex="0">
+        <div class="switcher-tab" id="tab-general" data-panel="general" role="tab" tabindex="0" data-i18n="settings.tab.general">
           General
         </div>
-        <div class="switcher-tab" id="tab-security" data-panel="security" role="tab" tabindex="0">
+        <div class="switcher-tab" id="tab-security" data-panel="security" role="tab" tabindex="0" data-i18n="settings.tab.security">
           Security
         </div>
-        <div class="switcher-tab" id="tab-appearance" data-panel="appearance" role="tab" tabindex="0">
+        <div class="switcher-tab" id="tab-appearance" data-panel="appearance" role="tab" tabindex="0" data-i18n="settings.tab.appearance">
           Appearance
         </div>
       </div>
 
       <div class="panel" data-panel="search" role="tabpanel" aria-labelledby="tab-search">
-        <div class="panel-heading">Default engine</div>
-        <div class="panel-hint">Used when what you type is not an address.</div>
+        <div class="panel-heading" data-i18n="settings.search.engineHeading">Default engine</div>
+        <div class="panel-hint" data-i18n="settings.search.engineHint">Used when what you type is not an address.</div>
         <div class="engine-choice" id="engine-choice"></div>
         <div class="custom-engine-row" id="custom-engine-row" hidden>
           <div class="panel-hint">
@@ -62,8 +63,8 @@
       <div class="panel" data-panel="general" role="tabpanel" aria-labelledby="tab-general" hidden>
         <div class="toggle-row">
           <div class="toggle-text">
-            <div class="panel-heading" id="restore-label">Reopen previous tabs</div>
-            <div class="panel-hint">
+            <div class="panel-heading" id="restore-label" data-i18n="settings.general.restoreHeading">Reopen previous tabs</div>
+            <div class="panel-hint" data-i18n="settings.general.restoreHint">
               Restores the tabs that were open when the browser last closed.
             </div>
           </div>
@@ -76,18 +77,36 @@
           ></div>
         </div>
 
-        <div class="panel-heading section-gap">Browsing data</div>
-        <div class="panel-hint">
+        <div class="toggle-row section-gap">
+          <div class="toggle-text">
+            <div class="panel-heading" id="favicons-label" data-i18n="settings.general.faviconsHeading">Show site icons</div>
+            <div class="panel-hint" data-i18n="settings.general.faviconsHint">
+              Shows each site's real icon in tabs, the new tab dock and
+              bookmarks, instead of a letter. Off by default: loading an
+              icon is itself a request to that site.
+            </div>
+          </div>
+          <div
+            class="toggle"
+            id="favicons-toggle"
+            role="switch"
+            tabindex="0"
+            aria-labelledby="favicons-label"
+          ></div>
+        </div>
+
+        <div class="panel-heading section-gap" data-i18n="settings.general.dataHeading">Browsing data</div>
+        <div class="panel-hint" data-i18n="settings.general.dataHint">
           Clears cookies, cache, and site storage for every site. This does not
           affect your saved shortcuts or settings.
         </div>
-        <button class="clear-data-btn" id="clear-data-btn">Clear browsing data</button>
+        <button class="clear-data-btn" id="clear-data-btn" data-i18n="settings.general.clearData">Clear browsing data</button>
       </div>
 
       <div class="panel" data-panel="security" role="tabpanel" aria-labelledby="tab-security" hidden>
         <div class="toggle-row">
           <div class="toggle-text">
-            <div class="panel-heading" id="phishing-label">Phishing protection</div>
+            <div class="panel-heading" id="phishing-label" data-i18n="settings.security.phishingHeading">Phishing protection</div>
             <div class="panel-hint" id="threat-feed-status">
               Checks sites against a community list of known phishing
               addresses.
@@ -102,11 +121,11 @@
           ></div>
         </div>
         <div class="threat-feed-actions">
-          <button class="refresh-btn" id="refresh-threat-feed-btn">Refresh now</button>
+          <button class="refresh-btn" id="refresh-threat-feed-btn" data-i18n="settings.security.refresh">Refresh now</button>
         </div>
 
-        <div class="panel-heading section-gap">Blocked sites</div>
-        <div class="panel-hint">
+        <div class="panel-heading section-gap" data-i18n="settings.security.blockedHeading">Blocked sites</div>
+        <div class="panel-hint" data-i18n="settings.security.blockedHint">
           Sites you've blocked won't load at all, on this device only.
         </div>
         <div class="block-host-row">
@@ -118,15 +137,16 @@
             autocomplete="off"
             spellcheck="false"
             aria-label="Site to block"
+            data-i18n-placeholder="settings.security.blockedPlaceholder"
           />
-          <button class="block-host-btn" id="block-host-btn">Block</button>
+          <button class="block-host-btn" id="block-host-btn" data-i18n="settings.security.blockBtn">Block</button>
         </div>
         <div class="blocked-hosts-list" id="blocked-hosts-list"></div>
       </div>
 
       <div class="panel" data-panel="appearance" role="tabpanel" aria-labelledby="tab-appearance" hidden>
-        <div class="panel-heading">Accent color</div>
-        <div class="panel-hint">
+        <div class="panel-heading" data-i18n="settings.appearance.colorHeading">Accent color</div>
+        <div class="panel-hint" data-i18n="settings.appearance.colorHint">
           Applies everywhere &mdash; the toolbar, buttons, and links throughout
           Weglet.
         </div>
@@ -143,14 +163,39 @@
             maxlength="7"
             aria-label="Accent colour, hex"
           />
-          <button class="reset-color-btn" id="reset-color-btn">Reset to default</button>
+          <button class="reset-color-btn" id="reset-color-btn" data-i18n="settings.appearance.reset">Reset to default</button>
         </div>
 
-        <div class="panel-heading section-gap">Address bar shape</div>
+        <div class="panel-heading section-gap" data-i18n="settings.appearance.shapeHeading">Address bar shape</div>
         <div class="shape-choice" id="shape-choice">
-          <button class="shape-option" data-shape="pill">Pill</button>
-          <button class="shape-option" data-shape="rounded">Rounded</button>
-          <button class="shape-option" data-shape="square">Square</button>
+          <button class="shape-option" data-shape="pill" data-i18n="settings.appearance.shapePill">Pill</button>
+          <button class="shape-option" data-shape="rounded" data-i18n="settings.appearance.shapeRounded">Rounded</button>
+          <button class="shape-option" data-shape="square" data-i18n="settings.appearance.shapeSquare">Square</button>
+        </div>
+
+        <div class="panel-heading section-gap" data-i18n="settings.appearance.languageHeading">Language</div>
+        <div class="shape-choice" id="language-choice">
+          <button class="shape-option" data-lang="en">English</button>
+          <button class="shape-option" data-lang="ru">Русский</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-backdrop" id="favicons-warning-backdrop">
+      <div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="favicons-warning-title">
+        <h2 id="favicons-warning-title" data-i18n="settings.general.faviconsWarningTitle">Show site icons?</h2>
+        <div class="panel-hint" data-i18n="settings.general.faviconsWarningBody">
+          Weglet will start asking each site you have open or pinned for its
+          icon. That request tells the site you are there, before you type
+          or click anything else.
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="modal-btn cancel" id="favicons-warning-cancel" data-i18n="settings.general.faviconsWarningCancel">
+            Cancel
+          </button>
+          <button type="button" class="modal-btn confirm" id="favicons-warning-confirm" data-i18n="settings.general.faviconsWarningEnable">
+            Turn on
+          </button>
         </div>
       </div>
     </div>

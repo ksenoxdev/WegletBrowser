@@ -1,0 +1,93 @@
+/* Copyright 2026 Weglet - Licensed under Apache 2.0
+ *
+ * A small floating popup -- see save_shortcut.css, which this mirrors.
+ * Its whole window is exactly this card, so there is no outer scroll
+ * region to account for.
+ */
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--color-surface-raised);
+}
+
+body {
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-popup);
+  box-sizing: border-box;
+  color: var(--color-text);
+  font-family: "Instrument Sans", sans-serif;
+  padding: var(--space-xl);
+  display: flex;
+  flex-direction: column;
+}
+
+.origin {
+  font-family: "Outfit", sans-serif;
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-title);
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-dim);
+  margin-top: 2px;
+}
+
+.types {
+  margin: var(--space-md) 0 var(--space-lg);
+  padding: 0;
+  list-style: none;
+  flex: 1;
+}
+
+.types li {
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+  padding: 4px 0;
+}
+
+.types li::before {
+  content: "•";
+  color: var(--color-text-dim);
+  margin-right: var(--space-sm);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-md);
+}
+
+.btn {
+  flex: 1;
+  font-size: var(--font-size-xs);
+  padding: var(--space-md) 0;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  font-family: "Instrument Sans", sans-serif;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-dim);
+}
+
+.btn:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}
+
+.btn-primary {
+  background: var(--color-accent-solid);
+  color: var(--color-on-accent-solid);
+  border: 1px solid var(--color-accent-solid);
+  font-weight: var(--font-weight-bold);
+}
+
+.btn-primary:hover {
+  filter: brightness(1.08);
+}

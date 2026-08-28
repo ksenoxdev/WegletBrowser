@@ -1,6 +1,6 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// weglet/browser/weglet_browser_main_parts.cc
+// Browser-process startup and shutdown.
 
 #include "weglet/browser/weglet_browser_main_parts.h"
 
@@ -8,12 +8,19 @@
 
 #include "base/command_line.h"
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/logging.h"
 #include "base/run_loop.h"
+#include "base/task/single_thread_task_runner.h"
+#include "base/task/thread_pool.h"
 #include "base/time/time.h"
+#include "components/spellcheck/browser/windows_spell_checker.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/common/result_codes.h"
 #include "weglet/browser/weglet_bridge.h"
 #include "weglet/browser/weglet_browser_context.h"
+#include "weglet/browser/weglet_devtools_manager_delegate.h"
+#include "weglet/browser/weglet_download_observer.h"
 #include "weglet/browser/weglet_security_guard.h"
 #include "weglet/browser/weglet_state_service.h"
 #include "weglet/browser/weglet_web_ui_controller_factory.h"
@@ -31,9 +38,8 @@ namespace weglet {
 namespace {
 
 #if defined(USE_AURA)
-// views::ViewsDelegate is abstract but every method has a usable
-// default; this exists only because something has to be installed
-// before the first Widget is created.
+// Every method has a usable default; this exists because something has to
+// be installed before the first Widget.
 class WegletViewsDelegate : public views::ViewsDelegate {
  public:
   WegletViewsDelegate() = default;
@@ -59,24 +65,39 @@ int WegletBrowserMainParts::PreMainMessageLoopRun() {
   browser_context_ = std::make_unique<WegletBrowserContext>(
       /*off_the_record=*/false);
 
+  // Native Windows spellchecker -- see WegletSpellCheckHost. Created
+  // unconditionally like real Chrome's own InitializePlatformSpellchecker:
+  // cheap until a language checker is actually requested below.
+  spell_checker_ = std::make_unique<WindowsSpellChecker>(
+      base::ThreadPool::CreateCOMSTATaskRunner({base::MayBlock()}));
+  spell_checker_->RetrieveSpellcheckLanguages(
+      base::BindOnce(&WegletBrowserMainParts::OnSpellcheckLanguagesRetrieved,
+                     weak_factory_.GetWeakPtr()));
+
+  // Serves the DevTools front-end tab loads -- see WegletWindow::OpenDevTools.
+  WegletDevToolsManagerDelegate::StartHttpHandler(browser_context_.get());
+
   // chrome://weglet/ has to exist before the first window navigates to it.
   AddWegletWebUIDataSource(browser_context_.get());
 
-  // And the factory has to be registered before that navigation is asked
-  // whether it is a WebUI: it is the answer that decides whether the page
-  // gets a channel to the browser.
+  // Registered before that navigation is asked whether it is a WebUI:
+  // that answer decides whether the page gets a channel to the browser.
   WegletWebUIControllerFactory::Register();
 
   bridge_ = std::make_unique<WegletBridge>();
 
   // Before the first window: a page's controller reaches for both as soon
-  // as it is created, and the window creates pages. The guard first --
-  // the state service holds it to build the notice page's payload.
+  // as it is created. The guard first -- the state service holds it.
   WegletSecurityGuard::CreateForBrowserContext(browser_context_.get(),
                                                bridge_.get());
   WegletStateService::CreateForBrowserContext(
       browser_context_.get(), bridge_.get(),
-      WegletSecurityGuard::FromBrowserContext(browser_context_.get()));
+      WegletSecurityGuard::FromBrowserContext(browser_context_.get()),
+      browser_context_->permission_delegate(), spell_checker_.get());
+
+  download_observer_ = std::make_unique<WegletDownloadObserver>(
+      browser_context_->GetDownloadManager(), bridge_.get(),
+      WegletStateService::FromBrowserContext(browser_context_.get()));
 
   settings_flush_timer_.Start(
       FROM_HERE, bridge_->SettingsFlushInterval(),
@@ -87,28 +108,37 @@ int WegletBrowserMainParts::PreMainMessageLoopRun() {
       base::BindRepeating(&WegletBrowserMainParts::SaveSession,
                           base::Unretained(this)));
 
-  // One WegletWindow per window the model restored -- a session with two
-  // windows opens two.
+  // One WegletWindow per window the model restored.
   for (uint64_t window : bridge_->Windows()) {
     WegletWindow::CreateAndShow(browser_context_.get(), bridge_.get(), window);
   }
 
-  // Anything other than RESULT_CODE_NORMAL_EXIT here aborts startup.
+  // Anything other than RESULT_CODE_NORMAL_EXIT aborts startup.
   return content::RESULT_CODE_NORMAL_EXIT;
 }
 
 void WegletBrowserMainParts::WillRunMainMessageLoop(
     std::unique_ptr<base::RunLoop>& run_loop) {
-  // Handing the quit closure to the window layer is what makes closing
-  // the last window end the process, rather than leaving a headless
-  // browser running with no way to reach it.
+  // Handing the quit closure to the window layer is what makes closing the
+  // last window end the process.
   WegletWindow::SetQuitClosure(run_loop->QuitClosure());
+}
+
+void WegletBrowserMainParts::OnSpellcheckLanguagesRetrieved(
+    const std::vector<std::string>& lang_tags) {
+  // One native checker per language pack the OS actually has installed.
+  // Which one("s") is irrelevant to WegletSpellCheckHost::RequestTextCheck,
+  // which checks against every created checker regardless of what language
+  // the renderer thinks it asked for -- see InitializeDictionaries.
+  for (const std::string& lang_tag : lang_tags) {
+    spell_checker_->CreateSpellChecker(lang_tag, base::DoNothing());
+  }
 }
 
 void WegletBrowserMainParts::FlushSettings() {
   if (bridge_ && bridge_->SettingsDirty() && !bridge_->FlushSettings()) {
-    // Said out loud rather than swallowed: settings that quietly stop
-    // being written look exactly like settings that are being written.
+    // Settings that quietly stop being written look exactly like settings
+    // that are being written.
     LOG(ERROR) << "could not write settings -- changes are not being saved";
   }
 }
@@ -120,13 +150,13 @@ void WegletBrowserMainParts::SaveSession() {
 }
 
 void WegletBrowserMainParts::PostMainMessageLoopRun() {
-  // Stopped first: neither should fire while the model below is going
-  // away.
+  WegletDevToolsManagerDelegate::StopHttpHandler();
+
+  // Stopped first: neither should fire while the model is going away.
   settings_flush_timer_.Stop();
   session_save_timer_.Stop();
 
-  // The session is written here rather than when the window closed: at that
-  // point the tab list was still being torn down.
+  // Not when the window closed: the tab list was still being torn down.
   if (bridge_ && !bridge_->SaveSession()) {
     LOG(ERROR) << "could not save the session -- open tabs will be lost";
   }
@@ -136,9 +166,10 @@ void WegletBrowserMainParts::PostMainMessageLoopRun() {
   }
 
   // Before the bridge: the state service is owned by the context and
-  // holds a pointer to the bridge.
+  // holds a pointer to it.
   browser_context_.reset();
   bridge_.reset();
+  spell_checker_.reset();
 
 #if defined(USE_AURA)
   screen_.reset();

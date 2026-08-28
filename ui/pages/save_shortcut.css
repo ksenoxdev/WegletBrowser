@@ -1,0 +1,122 @@
+/* Copyright 2026 Weglet - Licensed under Apache 2.0
+ *
+ * A small floating popup, not a page inside chrome's own tab strip --
+ * see WegletShortcutPopup. Its whole window is exactly this card, so
+ * unlike every other page here there is no outer scroll region to
+ * account for.
+ */
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--color-surface-raised);
+}
+
+body {
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-popup);
+  box-sizing: border-box;
+  color: var(--color-text);
+  font-family: "Instrument Sans", sans-serif;
+  padding: var(--space-xl);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: var(--space-lg);
+}
+
+.favicon {
+  width: var(--layout-swatch);
+  height: var(--layout-swatch);
+  border-radius: var(--radius-swatch);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-field);
+  color: var(--color-text-dim);
+  font-family: "Outfit", sans-serif;
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-lg);
+}
+
+.titles {
+  min-width: 0;
+}
+
+.title {
+  font-family: "Outfit", sans-serif;
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-title);
+  color: var(--color-text);
+}
+
+.domain {
+  font-size: var(--font-size-md);
+  color: var(--color-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.name-input {
+  width: 100%;
+  box-sizing: border-box;
+  height: var(--layout-field-height);
+  background: var(--color-field);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  font-family: "Instrument Sans", sans-serif;
+  font-size: var(--font-size-sm);
+  padding: 0 var(--space-lg);
+  outline: none;
+  margin-bottom: var(--space-lg);
+}
+
+.name-input:focus {
+  border-color: var(--color-ring);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-md);
+}
+
+.actions button {
+  flex: 1;
+  font-size: var(--font-size-xs);
+  padding: var(--space-md) 0;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  font-family: "Instrument Sans", sans-serif;
+  position: relative;
+  overflow: hidden;
+}
+
+.cancel-btn {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-dim);
+}
+
+.cancel-btn:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}
+
+.save-btn {
+  background: var(--color-accent-solid);
+  color: var(--color-on-accent-solid);
+  border: 1px solid var(--color-accent-solid);
+  font-weight: var(--font-weight-bold);
+}
+
+.save-btn:hover {
+  filter: brightness(1.08);
+}

@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<!-- Copyright 2026 Weglet - Licensed under Apache 2.0
+
+     The dropdown a right click opens -- its own floating popup, not DOM
+     inside the tab it was invoked on: see WegletContextMenu. Its items
+     are built by context_menu.ts from the state push, since which ones
+     show depends on what was clicked on.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Context menu</title>
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="base.css" />
+    <link rel="stylesheet" href="context_menu.css" />
+  </head>
+  <body>
+    <div id="items"></div>
+    <script type="module" src="context_menu.js"></script>
+  </body>
+</html>

@@ -1,11 +1,8 @@
 name: CI
 
-# Everything here runs without a Chromium checkout: the tab model, the
-# omnibox parser, the security heuristics, the profile, the FFI boundary,
-# the contract/token generators, and protocol.ts's own validation. What
-# this does NOT cover is the C++ side and weglet_unittests, which need a
-# full Chromium build too large to run here -- see CONTRIBUTING.md for
-# running those locally.
+# Everything here runs without a Chromium checkout. The C++ side and
+# weglet_unittests need a full build and are not covered -- see
+# CONTRIBUTING.md.
 on:
   push:
     branches: [main]
@@ -28,10 +25,9 @@ jobs:
         with:
           workspaces: rust
 
-      # weglet-ffi/tests/boundary.rs binds every extern "C" function by
-      # its declared signature and calls it the way C++ does -- a
-      # mismatch with weglet_ffi.h fails to compile here rather than
-      # becoming undefined behaviour in the browser process.
+      # boundary.rs binds every extern "C" function by its declared
+      # signature, so a mismatch with weglet_ffi.h fails to compile here
+      # rather than in the browser process.
       - run: cargo test --workspace
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
@@ -57,11 +53,9 @@ jobs:
         with:
           node-version: "22"
 
-      # ui/run_ui_tests.py compiles and runs under Chromium's own vendored
-      # node, found by layout under third_party/node/. There's no
-      # Chromium checkout here, so this fakes that layout with the
-      # runner's system node -- the point of the check is protocol.ts's
-      # validation logic, not which node binary runs it.
+      # run_ui_tests.py wants Chromium's vendored node under
+      # third_party/node/. There is no checkout here, so this fakes that
+      # layout with the runner's system node.
       - name: Fake the vendored-toolchain layout
         run: |
           mkdir -p fake-chromium/third_party/node/linux/node-linux-x64/bin

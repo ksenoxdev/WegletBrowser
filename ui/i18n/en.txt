@@ -1,0 +1,136 @@
+# Copyright 2026 Weglet - Licensed under Apache 2.0
+#
+# The template every other language file is checked against: the set of
+# keys here is the whole set there is. generate_i18n.py reads this file
+# first and treats every other ui/i18n/*.txt as a translation of it.
+#
+# One key=value pair per line. '#' starts a comment; blank lines are
+# ignored. A key missing from a translation falls back to the line here
+# -- see generate_i18n.py for exactly how, and what it prints when that
+# happens.
+
+settings.title=Settings
+settings.done=Done
+settings.tab.search=Search
+settings.tab.general=General
+settings.tab.security=Security
+settings.tab.appearance=Appearance
+settings.search.engineHeading=Default engine
+settings.search.engineHint=Used when what you type is not an address.
+settings.general.restoreHeading=Reopen previous tabs
+settings.general.restoreHint=Restores the tabs that were open when the browser last closed.
+settings.general.dataHeading=Browsing data
+settings.general.dataHint=Clears cookies, cache, and site storage for every site. This does not affect your saved shortcuts or settings.
+settings.general.clearData=Clear browsing data
+settings.general.confirmAgain=Click again to confirm
+settings.general.faviconsHeading=Show site icons
+settings.general.faviconsHint=Shows each site's real icon in tabs, the new tab dock and bookmarks, instead of a letter. Off by default: loading an icon is itself a request to that site.
+settings.general.faviconsWarningTitle=Show site icons?
+settings.general.faviconsWarningBody=Weglet will start asking each site you have open or pinned for its icon. That request tells the site you are there, before you type or click anything else.
+settings.general.faviconsWarningCancel=Cancel
+settings.general.faviconsWarningEnable=Turn on
+settings.security.phishingHeading=Phishing protection
+settings.security.phishingHint=Checks sites against a community list of known phishing addresses.
+settings.security.phishingHintNotUpdated=Not yet updated.
+settings.security.phishingHintUpdated=Last updated {when}.
+settings.security.phishingHintFailed=The last update failed; showing the list from {when}.
+settings.security.refresh=Refresh now
+settings.security.refreshing=Refreshing…
+settings.security.blockedHeading=Blocked sites
+settings.security.blockedHint=Sites you've blocked won't load at all, on this device only.
+settings.security.blockedPlaceholder=example.com
+settings.security.blockBtn=Block
+settings.appearance.colorHeading=Accent color
+settings.appearance.colorHint=Applies everywhere — the toolbar, buttons, and links throughout Weglet.
+settings.appearance.reset=Reset to default
+settings.appearance.shapeHeading=Address bar shape
+settings.appearance.shapePill=Pill
+settings.appearance.shapeRounded=Rounded
+settings.appearance.shapeSquare=Square
+settings.appearance.languageHeading=Language
+
+toolbar.back=Back · Alt+←
+toolbar.forward=Forward · Alt+→
+toolbar.reload=Reload · Ctrl+R
+toolbar.keep=Keep this page · Ctrl+D
+toolbar.bookmark=Bookmark this page
+toolbar.copyUrl=Copy address
+toolbar.siteInfo=Site information and permissions
+toolbar.settingsHistory=Settings & History
+toolbar.downloads=Downloads
+toolbar.newTab=New tab · Ctrl+T
+toolbar.minimize=Minimize
+toolbar.maximize=Maximize
+toolbar.close=Close
+toolbar.addressPlaceholder=Search or enter address
+
+menu.settings=Settings
+menu.history=History
+menu.viewBookmarks=View bookmarks
+
+contextMenu.back=Back
+contextMenu.forward=Forward
+contextMenu.reload=Reload
+contextMenu.savePage=Save page as…
+contextMenu.viewSource=View page source
+contextMenu.openLinkNewTab=Open link in new tab
+contextMenu.copyLinkAddress=Copy link address
+contextMenu.cut=Cut
+contextMenu.copy=Copy
+contextMenu.paste=Paste
+contextMenu.selectAll=Select all
+contextMenu.inspect=Inspect
+
+findBar.placeholder=Find in page
+findBar.previous=Previous match
+findBar.next=Next match
+findBar.close=Close
+
+permissionPrompt.wants=wants to:
+permissionPrompt.allow=Allow
+permissionPrompt.block=Block
+permissionPrompt.camera=Use your camera
+permissionPrompt.microphone=Use your microphone
+permissionPrompt.location=Know your location
+permissionPrompt.notifications=Show notifications
+
+siteInfo.internalTitle=This is a Weglet page
+siteInfo.internalBody=It is part of the browser and does not need permissions.
+siteInfo.camera=Camera
+siteInfo.microphone=Microphone
+siteInfo.location=Location
+siteInfo.notifications=Notifications
+
+history.title=History
+history.done=Done
+history.searchTab=Search history
+history.downloadsTab=Downloads
+history.noSearchHistory=No search history.
+history.noDownloads=No downloads.
+history.clearSearchHistory=Clear search history
+history.clearDownloads=Clear downloads
+
+bookmarks.title=Bookmarks
+bookmarks.done=Done
+bookmarks.empty=No bookmarks yet.
+bookmarks.remove=Remove bookmark
+
+newtab.searchPlaceholder=Search or enter address
+newtab.searchingWith=Searches go to
+newtab.contextEdit=Edit
+newtab.contextDelete=Delete
+newtab.addShortcutTitle=Add shortcut
+newtab.editShortcutTitle=Edit shortcut
+newtab.nameLabel=Name
+newtab.namePlaceholder=My Site
+newtab.linkLabel=Link
+newtab.cancel=Cancel
+newtab.add=Add
+newtab.save=Save
+
+security.goBack=Go back
+security.proceedAnyway=Proceed anyway
+
+saveShortcut.title=Save shortcut
+saveShortcut.cancel=Cancel
+saveShortcut.save=Save

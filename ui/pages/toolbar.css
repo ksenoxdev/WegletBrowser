@@ -58,10 +58,8 @@ body {
   border: 1px solid transparent;
   color: var(--color-text-dim);
   font-size: var(--font-size-sm);
-  /* flex-basis 0%, not auto: every tab claims an equal share rather than
-     sizing off its own title. The low floor lets a tab shrink to favicon
-     plus close button -- the title ellipsis-clips away first -- so the strip
-     never overflows and hides the "+" button once enough tabs are open. */
+  /* flex-basis 0%: every tab claims an equal share instead of sizing off
+     its title, so the strip never overflows and hides the "+" button. */
   flex: 1 1 0%;
   min-width: var(--layout-tab-min-width);
   max-width: var(--layout-tab-max-width);
@@ -75,6 +73,18 @@ body {
   color: var(--color-text);
   font-weight: var(--font-weight-bold);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.tab-pill.dragging {
+  cursor: grabbing;
+  z-index: 5;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+}
+
+/* Applied to every OTHER pill while one is being dragged -- the dragged
+   pill itself tracks the pointer with zero lag, so it never gets this. */
+.tab-pill.drag-shifting {
+  transition: transform var(--motion-fast) ease;
 }
 
 .tab-title {
@@ -227,6 +237,49 @@ body {
   cursor: default;
 }
 
+#bookmark-toggle.bookmarked {
+  color: var(--color-ring);
+}
+
+#site-info.protected {
+  color: var(--color-ring);
+}
+
+#downloads-button.downloading {
+  color: var(--color-ring);
+}
+
+#downloads-button {
+  position: relative;
+}
+
+#downloads-button .downloads-spinner {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  animation: downloads-spin 0.9s linear infinite;
+}
+
+#downloads-button.downloading .downloads-spinner {
+  display: flex;
+}
+
+/* display:contents drops the span's own box entirely, so the icon inside
+   becomes a direct flex child of the button -- same as every other
+   nav-button's icon, which has no wrapper at all. Without this the span's
+   default inline-level box introduces a slight vertical offset. */
+#downloads-icon-slot {
+  display: contents;
+}
+
+@keyframes downloads-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* Pins the right-hand cluster to the row's end -- the address form is
    absolutely positioned, so these are the only flex items left. */
 #downloads-button {
@@ -245,9 +298,17 @@ body {
   gap: var(--layout-chrome-gap);
 }
 
-.address-bar {
+.address-bar-wrap {
+  position: relative;
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.address-bar {
+  width: 100%;
+  box-sizing: border-box;
   height: var(--layout-address-bar-height);
   background: var(--color-field);
   border: 1px solid var(--color-border);
@@ -255,12 +316,23 @@ body {
   color: var(--color-text);
   font-family: "Instrument Sans", sans-serif;
   font-size: var(--font-size-lg);
-  padding: 0 var(--space-xl);
+  /* Right side leaves room for the site-info icon overlaid on top of it. */
+  padding: 0 40px 0 var(--space-xl);
   outline: none;
   /* The one control that keeps a CSS transition: it is not driven by the
      heat strip, and its border is a two-state thing rather than a
      continuous one. */
   transition: border-color var(--motion-fast), border-radius var(--motion-fast);
+}
+
+.address-bar-icon {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  /* Not transform: translateY(-50%) -- renderButtons() overwrites this
+     element's own transform every frame for the hover-heat scale effect,
+     which would silently cancel a translate set here. */
+  margin-top: calc(var(--layout-nav-button) / -2);
 }
 
 /* Set on <html> from the settings; "pill" is the default above. */

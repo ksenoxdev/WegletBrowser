@@ -1,20 +1,20 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// weglet/ui/src/modal.ts
-//
-// A modal that actually traps focus, and a context menu that closes.
+// A modal that traps focus, and a context menu that closes.
 
 import { byId } from "./dom.js";
 
 interface ModalOptions {
   readonly backdropId: string;
   readonly onConfirm: () => void;
-  // The field to put the cursor in when it opens.
+  // The element to put focus on when it opens: a field for a modal that
+  // asks for input, a button for one that only asks a question.
   readonly focusId: string;
+  // Enter confirms unless focus is on this one, where it would be a
+  // trap -- see the keydown handler below.
+  readonly cancelId: string;
 }
 
-// Returns open and close. Both are needed by the caller, and neither belongs
-// to the DOM node itself.
 export function createModal(options: ModalOptions): {
   open: () => void;
   close: () => void;
@@ -27,11 +27,11 @@ export function createModal(options: ModalOptions): {
 
   const open = (): void => {
     backdrop.classList.add("open");
-    byId<HTMLInputElement>(options.focusId).focus();
+    byId(options.focusId).focus();
   };
 
-  // Clicking the backdrop itself dismisses; clicking the modal inside it must
-  // not, so the target has to be the backdrop and not a descendant.
+    // The backdrop dismisses; the modal inside it must not, so the target
+    // has to be the backdrop and not a descendant.
   backdrop.addEventListener("click", (event) => {
     if (event.target === backdrop) {
       close();
@@ -45,9 +45,9 @@ export function createModal(options: ModalOptions): {
       return;
     }
     if (key === "Enter") {
-      // Enter anywhere in the modal confirms, the way a real dialog does --
-      // except in the Cancel button, where it would be a trap.
-      if (document.activeElement?.id !== "shortcut-cancel") {
+      // Enter confirms, the way a real dialog does -- except in Cancel,
+      // where it would be a trap.
+      if (document.activeElement?.id !== options.cancelId) {
         event.preventDefault();
         options.onConfirm();
       }
@@ -57,9 +57,8 @@ export function createModal(options: ModalOptions): {
       return;
     }
 
-    // Focus trap. Without it Tab walks out of the dialog and into the page
-    // behind it, which is invisible and unreachable -- the user is left
-    // typing into nothing.
+    // Focus trap. Without it Tab walks into the page behind the dialog,
+    // which is invisible and unreachable.
     const focusable = backdrop.querySelectorAll<HTMLElement>(
       "input, button, [tabindex]:not([tabindex='-1'])",
     );
@@ -102,8 +101,7 @@ export function createContextMenu(
 
   const openAt = (x: number, y: number): void => {
     menu.classList.add("open");
-    // Measured after it is displayed: a hidden element has no size, so the
-    // clamp below would compare against zero.
+    // Measured after it is displayed: a hidden element has no size.
     const rect = menu.getBoundingClientRect();
     const margin = 6;
     menu.style.left = `${Math.min(x, window.innerWidth - rect.width - margin)}px`;
@@ -117,9 +115,8 @@ export function createContextMenu(
     });
   }
 
-  // Closed by anything that means "not this": a click elsewhere, Escape, or
-  // the window losing focus. The previous interface only had the first, so a
-  // menu opened by mistake stayed open.
+  // Closed by anything that means "not this": a click elsewhere, Escape,
+  // or the window losing focus.
   document.addEventListener("pointerdown", (event) => {
     if (!menu.contains(event.target as Node)) {
       close();

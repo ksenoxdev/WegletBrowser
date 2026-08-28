@@ -1,22 +1,17 @@
 #!/usr/bin/env python3
 # Copyright 2026 Weglet - Licensed under Apache 2.0
 #
-# weglet/ui/generators_test.py
-#
-# The generators are the mechanism that keeps four languages saying the
-# same thing, and nothing tested them. Their only self-check was a
-# duplicate-name test in generate_contract.py.
-#
-# That matters more than it looks: a mistake in contract.json or tokens.json
-# does not fail here, it produces generated C++ that fails to compile with
-# an error pointing at a file nobody wrote -- or, worse, generated code that
-# compiles and is wrong.
+# The generators keep four languages saying the same thing. A mistake in
+# contract.json or tokens.json does not fail in them: it produces
+# generated C++ that fails to compile with an error pointing at a file
+# nobody wrote, or generated code that compiles and is wrong.
 #
 # Run with: python3 weglet/ui/generators_test.py
 
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -25,6 +20,7 @@ import unittest
 UI_DIR = os.path.dirname(os.path.abspath(__file__))
 CONTRACT = os.path.join(UI_DIR, "generate_contract.py")
 TOKENS = os.path.join(UI_DIR, "generate_tokens.py")
+I18N = os.path.join(UI_DIR, "generate_i18n.py")
 
 
 def run(script: str, *args: str) -> subprocess.CompletedProcess:
@@ -46,6 +42,12 @@ class GeneratorTestCase(unittest.TestCase):
         path = self.path(name)
         with open(path, "w", encoding="utf-8") as handle:
             json.dump(data, handle)
+        return path
+
+    def write_txt(self, name: str, contents: str) -> str:
+        path = self.path(name)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(contents)
         return path
 
 
@@ -85,8 +87,7 @@ class ContractTest(GeneratorTestCase):
         self.assertIn('"navigate"', self.read("header"))
         self.assertIn('BLANK_TAB: &str = "about:blank"', self.read("rust"))
 
-    # Asking for one output must not write the others. build_rust.py used
-    # to pass throwaway paths inside the source tree because of this.
+    # Asking for one output must not write the others.
     def test_each_output_is_independent(self):
         result = self.generate(self.minimal(), "rust")
         self.assertEqual(result.returncode, 0)
@@ -99,8 +100,8 @@ class ContractTest(GeneratorTestCase):
         result = run(CONTRACT, "--contract", source)
         self.assertNotEqual(result.returncode, 0)
 
-    # The arity and the argument types reach C++, which is the whole point
-    # of the MessageSpec table: before, only TypeScript used them.
+    # The arity and the argument types reach C++, which is the point of
+    # the MessageSpec table.
     def test_argument_types_reach_the_header(self):
         self.generate(self.minimal())
         header = self.read("header")
@@ -113,8 +114,46 @@ class ContractTest(GeneratorTestCase):
 
     def test_pushes_reach_both_sides_with_the_same_spelling(self):
         self.generate(self.minimal())
-        self.assertIn('Push{PageKind::kToolbar, "setState"}', self.read("header"))
+        self.assertIn(
+            'Push{PageKind::kToolbar, "weglet.setState"}', self.read("header")
+        )
+        self.assertIn('export const pushNamespace = "weglet";', self.read("ts"))
         self.assertIn('state: "setState"', self.read("ts"))
+
+    # The two halves used to be checked against the same literal, which is
+    # not the same as checking them against each other: the C++ side lost
+    # its namespace qualifier and both assertions still passed. The string
+    # is rebuilt from the TypeScript and compared to the C++ verbatim.
+    def test_what_the_browser_calls_is_what_the_page_installs(self):
+        contract = self.minimal()
+        contract["pushes"]["newTab"] = {"page": "newtab", "function": "setNewTab"}
+        self.generate(contract)
+        header = self.read("header")
+        ts = self.read("ts")
+
+        namespace = re.search(
+            r'export const pushNamespace = "([^"]+)";', ts
+        )
+        self.assertIsNotNone(namespace, "the TypeScript declares no namespace")
+
+        block = re.search(
+            r"export const pushes = \{(.*?)\} as const;", ts, re.DOTALL
+        )
+        self.assertIsNotNone(block, "the TypeScript declares no pushes")
+        installed = dict(re.findall(r'(\w+): "([^"]+)",', block.group(1)))
+        called = re.findall(r'Push\{PageKind::\w+, "([^"]+)"\}', header)
+
+        self.assertEqual(len(installed), len(contract["pushes"]))
+        self.assertEqual(len(called), len(contract["pushes"]))
+
+        for name, function in installed.items():
+            expected = f"{namespace.group(1)}.{function}"
+            self.assertIn(
+                expected,
+                called,
+                f"the page installs {name} as {expected!r}, which the browser "
+                f"never calls; it calls {called}",
+            )
 
     def test_page_kinds_are_generated_from_the_page_list(self):
         self.generate(self.minimal())
@@ -136,8 +175,7 @@ class ContractTest(GeneratorTestCase):
         self.assertIn("duplicate message name", result.stderr)
 
     # An unknown type would become an ArgKind that does not exist, and the
-    # generated header would fail to compile with a KeyError's worth of
-    # context.
+    # generated header would fail to compile.
     def test_unknown_argument_type_is_refused(self):
         contract = self.minimal()
         contract["messages"][0]["args"] = ["Widget"]
@@ -168,9 +206,8 @@ class ContractTest(GeneratorTestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("duplicate push function", result.stderr)
 
-    # The exact failure that started all of this: an address resolving to a
-    # page that does not exist. It used to produce a header referring to an
-    # undeclared identifier.
+    # An address resolving to a page that does not exist. It used to
+    # produce a header referring to an undeclared identifier.
     def test_address_resolving_to_an_unknown_page_is_refused(self):
         contract = self.minimal()
         contract["internal_addresses"]["blank-tab"]["page"] = "nonesuch"
@@ -178,9 +215,8 @@ class ContractTest(GeneratorTestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("not in the pages block", result.stderr)
 
-    # Checked whichever output was asked for, so a mistake is caught by the
-    # first build that reads the file rather than by whichever one happens
-    # to write the affected output.
+    # Checked whichever output was asked for, so a mistake is caught by
+    # the first build that reads the file.
     def test_validation_runs_even_for_an_unrelated_output(self):
         contract = self.minimal()
         contract["pushes"]["state"]["page"] = "nonesuch"
@@ -263,16 +299,15 @@ class TokensTest(GeneratorTestCase):
         self.generate(self.minimal())
         css = self.read("css")
         self.assertIn('format("woff2")', css)
-        # .ttf has no entry in content's own MIME table and would be served
-        # as text/html.
+        # .ttf has no entry in content's own MIME table and would be
+        # served as text/html.
         self.assertNotIn(".ttf", css)
 
     def test_the_default_accent_reaches_rust(self):
         self.generate(self.minimal())
         self.assertIn('DEFAULT_ACCENT: &str = "#A855F7"', self.read("rust"))
 
-    # Three consumers, one value. The check that used to enforce this read
-    # settings.rs with a regular expression from Python.
+    # Three consumers, one value.
     def test_accent_disagreeing_with_the_first_preset_is_refused(self):
         tokens = self.minimal()
         tokens["accentPresets"] = ["#123456", "#3B82F6"]
@@ -291,8 +326,7 @@ class TokensTest(GeneratorTestCase):
         self.assertNotEqual(run(TOKENS, "--tokens", source).returncode, 0)
 
     # anim.ts interpolates these per frame and needs numbers, not strings.
-    # The hover tint in particular is a color-mix nobody can recompute by
-    # eye, and it was wrong when it was written out by hand.
+    # The hover tint is a color-mix nobody can recompute by eye.
     def test_channel_values_and_the_derived_mix_are_generated(self):
         self.generate(self.minimal())
         ts = self.read("ts")
@@ -315,6 +349,72 @@ class TokensTest(GeneratorTestCase):
             self.path("out.rust"),
         )
         self.assertEqual(result.returncode, 0, result.stderr)
+
+
+class I18nTest(GeneratorTestCase):
+    def generate(self, files: dict[str, str]) -> subprocess.CompletedProcess:
+        i18n_dir = self.path("i18n")
+        os.makedirs(i18n_dir, exist_ok=True)
+        for name, contents in files.items():
+            with open(os.path.join(i18n_dir, f"{name}.txt"), "w", encoding="utf-8") as handle:
+                handle.write(contents)
+        return run(I18N, "--i18n-dir", i18n_dir, "--ts", self.path("out.ts"))
+
+    def test_asking_for_nothing_is_an_error(self):
+        result = run(I18N)
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_a_missing_template_is_refused(self):
+        result = self.generate({"ru": "a=Привет\n"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("en.txt", result.stderr)
+
+    def test_a_key_the_template_lacks_is_refused(self):
+        result = self.generate({"en": "a=Hello\n", "ru": "a=Привет\nb=Лишнее\n"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("b", result.stderr)
+
+    # The load-bearing case: a translation behind the template must still
+    # produce a page that never shows blank text or a raw key.
+    def test_a_key_missing_from_a_translation_falls_back_to_the_template(self):
+        result = self.generate({"en": "a=Hello\nb=World\n", "ru": "a=Привет\n"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("ru.txt is missing", result.stderr)
+        with open(self.path("out.ts"), encoding="utf-8") as handle:
+            generated = handle.read()
+        self.assertIn('"a": "Привет"', generated)
+        # The fallback, not a blank string and not the bare key "b".
+        self.assertIn('"b": "World"', generated)
+
+    def test_a_complete_translation_is_silent(self):
+        result = self.generate({"en": "a=Hello\n", "ru": "a=Привет\n"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
+
+    def test_duplicate_keys_in_one_file_are_refused(self):
+        result = self.generate({"en": "a=Hello\na=Again\n"})
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_a_line_with_no_equals_sign_is_refused(self):
+        result = self.generate({"en": "not a key value line\n"})
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_comments_and_blank_lines_are_ignored(self):
+        result = self.generate({"en": "# a comment\n\na=Hello\n"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_the_real_i18n_generates(self):
+        result = run(
+            I18N,
+            "--i18n-dir",
+            os.path.join(UI_DIR, "i18n"),
+            "--ts",
+            self.path("out.ts"),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        # The real translations are meant to be complete; a gap here is
+        # worth seeing in the test output, not just on a stray build log.
+        self.assertEqual(result.stderr, "", result.stderr)
 
 
 def main() -> int:

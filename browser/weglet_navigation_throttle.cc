@@ -1,13 +1,16 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// weglet/browser/weglet_navigation_throttle.cc
+// Runs the security guard on every navigation and redirect.
 
 #include "weglet/browser/weglet_navigation_throttle.h"
 
 #include <memory>
 #include <optional>
 
+#include "base/functional/bind.h"
 #include "base/logging.h"
+#include "base/memory/weak_ptr.h"
+#include "base/task/single_thread_task_runner.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/navigation_throttle_registry.h"
 #include "content/public/browser/web_contents.h"
@@ -16,14 +19,27 @@
 #include "weglet/browser/weglet_window.h"
 
 namespace weglet {
+namespace {
+
+// The tab may have navigated again, closed, or lost its window by the
+// time this runs.
+void ShowSecurityNoticeIfAlive(base::WeakPtr<content::WebContents> contents) {
+  if (!contents) {
+    return;
+  }
+  if (WegletWindow* window = WegletWindow::FromWebContents(contents.get())) {
+    window->ShowSecurityNotice(contents.get());
+  }
+}
+
+}  // namespace
 
 // static
 void WegletNavigationThrottle::MaybeCreateAndAdd(
     content::NavigationThrottleRegistry& registry) {
   content::NavigationHandle& handle = registry.GetNavigationHandle();
-  // Subframes are not where the address bar points, and stopping one would
-  // block an ad slot without telling anyone. Whether to block subresources
-  // is a different feature with a different answer.
+  // Subframes are not where the address bar points. Whether to block
+  // subresources is a different feature.
   if (!handle.IsInPrimaryMainFrame()) {
     return;
   }
@@ -47,9 +63,8 @@ WegletNavigationThrottle::WillStartRequest() {
 
 content::NavigationThrottle::ThrottleCheckResult
 WegletNavigationThrottle::WillRedirectRequest() {
-  // The reason this class exists. A shortened link is judged on the
-  // shortener at WillStartRequest and on the destination here, which is
-  // the only point at which the destination is known.
+  // A shortened link is judged on the shortener at WillStartRequest and on
+  // the destination here, where it is first known.
   return Check();
 }
 
@@ -62,9 +77,8 @@ WegletNavigationThrottle::Check() {
   WegletSecurityGuard* guard = WegletSecurityGuard::FromBrowserContext(
       contents->GetBrowserContext());
   if (!guard) {
-    // No guard means no profile behind this navigation. Proceeding is the
-    // right default: failing closed here would make the browser refuse to
-    // load pages because of a wiring mistake.
+    // No guard means no profile behind this navigation. Failing closed
+    // would make a wiring mistake stop pages from loading.
     return PROCEED;
   }
 
@@ -77,21 +91,20 @@ WegletNavigationThrottle::Check() {
 
   LOG(WARNING) << "stopped navigation: " << notice->title;
 
-  // Remembered before the notice page is opened: that page asks for this
-  // as soon as its script runs.
+  // Remembered before the notice page opens: it asks for this as soon as
+  // its script runs.
   guard->SetPendingNotice(contents, *notice);
 
-  // The window puts the notice on screen. Without one -- a page open
-  // outside a Weglet window -- the navigation is still stopped; it just
-  // gets the engine's own blocked page rather than ours, which is worse
-  // to look at and no less correct.
-  if (WegletWindow* window = WegletWindow::FromWebContents(contents)) {
-    window->ShowSecurityNotice(contents);
-  }
+  // Posted, not called directly: ShowSecurityNotice starts a new
+  // navigation on this WebContents, and doing that synchronously reaches
+  // back into the NavigationRequest running this throttle and crashes
+  // the browser process.
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE,
+      base::BindOnce(&ShowSecurityNoticeIfAlive, contents->GetWeakPtr()));
 
-  // CANCEL rather than BLOCK_REQUEST: the tab is being sent somewhere
-  // else, so there is no error page to show and no entry to leave in the
-  // history for Back to land on.
+  // CANCEL rather than BLOCK_REQUEST: the tab is being sent elsewhere, so
+  // there is no error page and no history entry for Back to land on.
   return {content::NavigationThrottle::CANCEL, net::ERR_BLOCKED_BY_CLIENT};
 }
 

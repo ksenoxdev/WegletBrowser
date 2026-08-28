@@ -1,15 +1,20 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// weglet/browser/weglet_browser_main_parts.h
+// Browser-process startup and shutdown.
 
 #ifndef WEGLET_BROWSER_WEGLET_BROWSER_MAIN_PARTS_H_
 #define WEGLET_BROWSER_WEGLET_BROWSER_MAIN_PARTS_H_
 
 #include <memory>
+#include <string>
+#include <vector>
 
+#include "base/memory/weak_ptr.h"
 #include "base/timer/timer.h"
 #include "build/build_config.h"
 #include "content/public/browser/browser_main_parts.h"
+
+class WindowsSpellChecker;
 
 #if defined(USE_AURA)
 namespace display {
@@ -27,9 +32,10 @@ namespace weglet {
 
 class WegletBridge;
 class WegletBrowserContext;
+class WegletDownloadObserver;
 
-// Runs only in the browser process, and only once. This is where the
-// profile is opened and the first window appears.
+// Runs once, in the browser process. Opens the profile and the first
+// window.
 class WegletBrowserMainParts : public content::BrowserMainParts {
  public:
   WegletBrowserMainParts();
@@ -39,6 +45,7 @@ class WegletBrowserMainParts : public content::BrowserMainParts {
 
   WegletBrowserContext* browser_context() { return browser_context_.get(); }
   WegletBridge* bridge() { return bridge_.get(); }
+  WindowsSpellChecker* spell_checker() { return spell_checker_.get(); }
 
   // content::BrowserMainParts:
   int PreMainMessageLoopRun() override;
@@ -49,32 +56,41 @@ class WegletBrowserMainParts : public content::BrowserMainParts {
  private:
   std::unique_ptr<WegletBrowserContext> browser_context_;
 
-  // The browser's own model -- tabs, history, settings, security -- living
-  // in Rust. Created before the window, which reads it to know what to open,
-  // and destroyed after it.
+  // The browser's own model, in Rust. Created before the window that
+  // reads it, destroyed after.
   std::unique_ptr<WegletBridge> bridge_;
 
+  // Forwards content::DownloadManager's real downloads into the profile.
+  std::unique_ptr<WegletDownloadObserver> download_observer_;
+
+  // Wraps the Windows native spellchecker (ISpellCheckerFactory), so
+  // WegletSpellCheckHost::RequestTextCheck has something to call into.
+  // Owned here rather than per-BrowserContext: it is not profile data,
+  // just a handle onto an OS service.
+  std::unique_ptr<WindowsSpellChecker> spell_checker_;
+
   // Settings changes are marked in the model rather than written, so the
-  // fsync an atomic write ends in does not land on the UI thread inside
-  // the click that made the change. This is what actually writes them.
-  // Cheap and a no-op when nothing changed.
+  // fsync does not land on the UI thread. This does the write, and is a
+  // no-op when nothing changed.
   base::RepeatingTimer settings_flush_timer_;
 
-  // The session used to be written only in PostMainMessageLoopRun, so a
-  // crash or a kill lost every open tab -- while restore-session defaults
-  // to on, which is a promise kept only on a clean exit.
+  // On a timer as well as at shutdown: a crash between the two loses
+  // every open tab, and restore-session defaults to on.
   base::RepeatingTimer session_save_timer_;
 
   void FlushSettings();
   void SaveSession();
+  void OnSpellcheckLanguagesRetrieved(const std::vector<std::string>& lang_tags);
 
 #if defined(USE_AURA)
-  // Aura needs all three before any Widget can be created, and they
-  // have to outlive every window.
+  // Aura needs all three before any Widget is created, and they outlive
+  // every window.
   std::unique_ptr<wm::WMState> wm_state_;
   std::unique_ptr<views::ViewsDelegate> views_delegate_;
   std::unique_ptr<display::Screen> screen_;
 #endif
+
+  base::WeakPtrFactory<WegletBrowserMainParts> weak_factory_{this};
 };
 
 }  // namespace weglet

@@ -1,6 +1,6 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// weglet/browser/weglet_tab_observer.cc
+// Turns one tab's engine events into calls on its window.
 
 #include "weglet/browser/weglet_tab_observer.h"
 
@@ -24,17 +24,15 @@ WegletTabObserver::~WegletTabObserver() = default;
 void WegletTabObserver::DidFinishNavigation(
     content::NavigationHandle* navigation_handle) {
   // Subframes and uncommitted navigations are not where the tab is. An
-  // error page is: the tab really is showing that URL, and hiding it would
-  // leave the address bar claiming the previous page.
+  // error page is: hiding it would leave the address bar on the previous
+  // page.
   if (!navigation_handle->IsInPrimaryMainFrame() ||
       !navigation_handle->HasCommitted()) {
     return;
   }
 
-  // A same-document navigation is history.pushState or a fragment change.
-  // The window turns this into a replace rather than a new history entry --
-  // otherwise Back inside a single-page app walks entries the engine
-  // already handled itself.
+  // pushState or a fragment change. The window turns this into a replace,
+  // or Back walks entries the engine already handled.
   window_->OnTabNavigated(tab_id_, navigation_handle->GetURL(),
                           navigation_handle->IsSameDocument());
 }

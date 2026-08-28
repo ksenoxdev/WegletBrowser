@@ -1,16 +1,30 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// weglet/browser/weglet_message_handler.cc
+// Receives and validates the messages a page sends with chrome.send().
 
 #include "weglet/browser/weglet_message_handler.h"
 
+#include "base/files/file_path.h"
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/logging.h"
 #include "base/no_destructor.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/task/thread_pool.h"
+#include "base/time/time.h"
+#include "build/build_config.h"
+#include "content/public/browser/browser_context.h"
+#include "content/public/browser/browsing_data_remover.h"
+#include "content/public/browser/storage_partition.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_ui.h"
 #include "weglet/browser/weglet_bridge.h"
 #include "weglet/browser/weglet_state_service.h"
 #include "weglet/browser/weglet_window.h"
+
+#if BUILDFLAG(IS_WIN)
+#include "ui/base/win/shell.h"
+#endif
 
 namespace weglet {
 namespace {
@@ -19,6 +33,29 @@ namespace {
 const std::string& EmptyString() {
   static const base::NoDestructor<std::string> empty;
   return *empty;
+}
+
+// The shell calls below block, so they run on a thread that allows it
+// rather than the UI thread this handler itself runs on.
+void RevealInFolder(const base::FilePath& path) {
+#if BUILDFLAG(IS_WIN)
+  base::ThreadPool::PostTask(
+      FROM_HERE, {base::MayBlock()},
+      base::BindOnce(base::IgnoreResult(&ui::win::OpenFolderViaShell),
+                     path.DirName()));
+#else
+  LOG(WARNING) << "revealDownload: no shell integration on this platform";
+#endif
+}
+
+void OpenWithDefaultApp(const base::FilePath& path) {
+#if BUILDFLAG(IS_WIN)
+  base::ThreadPool::PostTask(
+      FROM_HERE, {base::MayBlock()},
+      base::BindOnce(base::IgnoreResult(&ui::win::OpenFileViaShell), path));
+#else
+  LOG(WARNING) << "openDownload: no shell integration on this platform";
+#endif
 }
 
 }  // namespace
@@ -31,15 +68,8 @@ WegletMessageHandler::WegletMessageHandler(WegletWindow* window,
 WegletMessageHandler::~WegletMessageHandler() = default;
 
 void WegletMessageHandler::RegisterMessages() {
-  // Every message in the contract, registered from the contract.
-  //
-  // Registering all of them is not optional: content answers an
-  // unregistered chrome.send() by crashing the browser process, so a name
-  // the page can send with no callback here is a button that closes the
-  // browser rather than one that does nothing. Driving the loop off
-  // kMessages is what makes that structural -- there is no second list to
-  // forget to add to, and no DCHECK needed to compare two lists that can
-  // no longer disagree.
+  // content crashes the browser process on an unregistered chrome.send(),
+  // so every name in the contract needs a callback here.
   for (const contract::MessageSpec& spec : contract::kMessages) {
     web_ui()->RegisterMessageCallback(
         spec.name, base::BindRepeating(&WegletMessageHandler::OnMessage,
@@ -63,17 +93,16 @@ bool WegletMessageHandler::Validate(const contract::MessageSpec& spec,
         ok = value.GetIfString() != nullptr;
         break;
       case contract::ArgKind::kNumber:
-        // Non-negative: every number in the contract is a position in a
-        // list the page was shown, and a negative one is not one.
+        // Every number in the contract is a position in a list the page
+        // was shown.
         ok = value.GetIfInt().value_or(-1) >= 0;
         break;
       case contract::ArgKind::kBoolean:
         ok = value.GetIfBool().has_value();
         break;
       case contract::ArgKind::kTabId: {
-        // Ids cross as strings because a JavaScript number is a double
-        // and cannot hold every u64 exactly; a silently rounded tab id
-        // shows up as "the wrong tab closed".
+        // Ids cross as strings: a JavaScript number is a double and
+        // cannot hold every u64 exactly.
         const std::string* text = value.GetIfString();
         uint64_t ignored = 0;
         ok = text && base::StringToUint64(*text, &ignored);
@@ -95,8 +124,8 @@ void WegletMessageHandler::OnMessage(const contract::MessageSpec* spec,
     return;
   }
   if (!spec->implemented) {
-    // Registered, not acted on. The gap is in the log rather than felt as
-    // a crash, and contract.json says which messages these are.
+    // Registered, not acted on. contract.json says which messages these
+    // are.
     LOG(WARNING) << "chrome.send(\"" << spec->name
                  << "\") is registered but not implemented yet";
     return;
@@ -132,9 +161,8 @@ bool WegletMessageHandler::BoolAt(const base::ListValue& args, size_t index) {
 
 void WegletMessageHandler::Dispatch(std::string_view name,
                                     const base::ListValue& args) {
-  // A page asking for a repaint -- after its own reload, or because it
-  // just registered and has nothing yet. Answered directly rather than
-  // through a coalesced notify: the page is waiting for it.
+  // A page asking for a repaint after its own reload, or because it just
+  // registered. Answered directly: the page is waiting for it.
   if (name == "requestState") {
     if (state_) {
       state_->PushTo(web_ui());
@@ -142,11 +170,6 @@ void WegletMessageHandler::Dispatch(std::string_view name,
     return;
   }
 
-  // --- settings and the profile -------------------------------------
-  //
-  // None of these mention a window. They used to, only because the window
-  // owned the code that told the pages about a change; that is the state
-  // service now.
   if (name == "addShortcut") {
     if (bridge_->AddShortcut(StringAt(args, 0), StringAt(args, 1))) {
       state_->Notify(WegletStateService::kShortcuts);
@@ -184,13 +207,19 @@ void WegletMessageHandler::Dispatch(std::string_view name,
   }
   if (name == "setAccentColor") {
     if (bridge_->SetAccentColor(StringAt(args, 0))) {
-      state_->Notify(WegletStateService::kSettings);
+      state_->Notify(WegletStateService::kTheme);
     }
     return;
   }
   if (name == "setAddressBarShape") {
     if (bridge_->SetAddressBarShape(StringAt(args, 0))) {
-      state_->Notify(WegletStateService::kSettings);
+      state_->Notify(WegletStateService::kTheme);
+    }
+    return;
+  }
+  if (name == "setLanguage") {
+    if (bridge_->SetLanguage(StringAt(args, 0))) {
+      state_->Notify(WegletStateService::kLanguage);
     }
     return;
   }
@@ -206,13 +235,104 @@ void WegletMessageHandler::Dispatch(std::string_view name,
     }
     return;
   }
+  if (name == "reorderTab") {
+    if (bridge_->ReorderTab(TabIdAt(args, 0), IndexAt(args, 1))) {
+      state_->Notify(WegletStateService::kTabs);
+    }
+    return;
+  }
+  if (name == "removeBookmark") {
+    if (bridge_->RemoveBookmark(IndexAt(args, 0))) {
+      state_->Notify(WegletStateService::kBookmarks);
+    }
+    return;
+  }
+  if (name == "clearSearchHistory") {
+    bridge_->ClearSearchHistory();
+    state_->Notify(WegletStateService::kHistory);
+    return;
+  }
+  if (name == "clearDownloadHistory") {
+    bridge_->ClearDownloadHistory();
+    state_->Notify(WegletStateService::kHistory);
+    return;
+  }
+  if (name == "revealDownload") {
+    const std::vector<WegletBridge::DownloadEntry> downloads = bridge_->Downloads();
+    const size_t index = IndexAt(args, 0);
+    if (index < downloads.size()) {
+      RevealInFolder(base::FilePath::FromUTF8Unsafe(downloads[index].path));
+    }
+    return;
+  }
+  if (name == "openDownload") {
+    const std::vector<WegletBridge::DownloadEntry> downloads = bridge_->Downloads();
+    const size_t index = IndexAt(args, 0);
+    if (index < downloads.size()) {
+      OpenWithDefaultApp(base::FilePath::FromUTF8Unsafe(downloads[index].path));
+    }
+    return;
+  }
+  if (name == "setThreatFeedEnabled") {
+    bridge_->SetThreatFeedEnabled(BoolAt(args, 0));
+    state_->Notify(WegletStateService::kSettings);
+    return;
+  }
+  if (name == "setFaviconsEnabled") {
+    bridge_->SetFaviconsEnabled(BoolAt(args, 0));
+    state_->Notify(WegletStateService::kFavicons);
+    return;
+  }
+  if (name == "refreshThreatFeed") {
+    content::BrowserContext* browser_context =
+        web_ui()->GetWebContents()->GetBrowserContext();
+    bridge_->RefreshThreatFeed(
+        browser_context->GetDefaultStoragePartition()
+            ->GetURLLoaderFactoryForBrowserProcess(),
+        base::BindOnce(
+            [](base::WeakPtr<WegletStateService> state, bool ok) {
+              // The result itself is not carried in the push: the
+              // settings snapshot already has updatedAt/lastUpdateFailed,
+              // which is the same answer with a timestamp attached.
+              if (state) {
+                state->Notify(WegletStateService::kSettings);
+              }
+            },
+            state_->GetWeakPtr()));
+    return;
+  }
+  if (name == "clearBrowsingData") {
+    bridge_->ClearSearchHistory();
+    bridge_->ClearDownloadHistory();
+    content::BrowserContext* browser_context =
+        web_ui()->GetWebContents()->GetBrowserContext();
+    browser_context->GetBrowsingDataRemover()->Remove(
+        base::Time(), base::Time::Max(),
+        content::BrowsingDataRemover::DATA_TYPE_COOKIES |
+            content::BrowsingDataRemover::DATA_TYPE_CACHE,
+        content::BrowsingDataRemover::ORIGIN_TYPE_UNPROTECTED_WEB);
+    state_->Notify(WegletStateService::kHistory);
+    return;
+  }
 
   // --- tabs, navigation and the notice -------------------------------
   //
-  // These are a window's business, and a page open outside one has no
-  // window to ask.
+  // A page open outside a window has no window to ask.
   if (!window_) {
     LOG(WARNING) << name << " needs a window and this page is not in one";
+    return;
+  }
+  if (name == "toggleBookmark") {
+    const uint64_t active_id = bridge_->ActiveTabId(window_->window_id());
+    for (const WegletBridge::TabInfo& tab : bridge_->Tabs(window_->window_id())) {
+      if (tab.id == active_id) {
+        bridge_->ToggleBookmark(tab.label, tab.url);
+        // Both: the toolbar's star lives in the tabs push, the list on
+        // the bookmarks page lives in its own.
+        state_->Notify(WegletStateService::kTabs | WegletStateService::kBookmarks);
+        break;
+      }
+    }
     return;
   }
   if (name == "navigate") {
@@ -225,20 +345,53 @@ void WegletMessageHandler::Dispatch(std::string_view name,
     window_->Reload();
   } else if (name == "newTab") {
     window_->OpenNewTab();
+  } else if (name == "minimizeWindow") {
+    window_->MinimizeWindow();
+  } else if (name == "toggleMaximizeWindow") {
+    window_->ToggleMaximizeWindow();
+  } else if (name == "closeWindow") {
+    window_->CloseWindow();
   } else if (name == "closeTab") {
     window_->CloseTab(TabIdAt(args, 0));
   } else if (name == "activateTab") {
     window_->ActivateTab(TabIdAt(args, 0));
-  } else if (name == "openSettings") {
-    window_->OpenSettings();
+  } else if (name == "toggleMenu") {
+    window_->ToggleMenu();
+  } else if (name == "hideMenu") {
+    window_->HideMenu();
   } else if (name == "securityDismiss") {
     window_->DismissSecurityNotice(web_ui()->GetWebContents());
   } else if (name == "securityProceed") {
     window_->ProceedPastSecurityNotice(web_ui()->GetWebContents());
+  } else if (name == "openSaveShortcutPopup") {
+    window_->OpenSaveShortcutPopup(static_cast<int>(IndexAt(args, 0)),
+                                   static_cast<int>(IndexAt(args, 1)));
+  } else if (name == "hideSaveShortcutPopup") {
+    window_->HideSaveShortcutPopup();
+  } else if (name == "contextMenuAction") {
+    window_->HandleContextMenuAction(StringAt(args, 0));
+  } else if (name == "hideContextMenu") {
+    window_->HideContextMenu();
+  } else if (name == "findInPage") {
+    window_->FindInPage(StringAt(args, 0));
+  } else if (name == "findNext") {
+    window_->FindNext(true);
+  } else if (name == "findPrevious") {
+    window_->FindNext(false);
+  } else if (name == "closeFindBar") {
+    window_->HideFindBar();
+  } else if (name == "answerPermissionPrompt") {
+    window_->AnswerPermissionPrompt(BoolAt(args, 0));
+  } else if (name == "toggleSiteInfo") {
+    window_->ToggleSiteInfo(static_cast<int>(IndexAt(args, 0)),
+                           static_cast<int>(IndexAt(args, 1)));
+  } else if (name == "hideSiteInfo") {
+    window_->HideSiteInfo();
+  } else if (name == "setPermissionDecision") {
+    window_->SetPermissionDecision(StringAt(args, 0), BoolAt(args, 1));
   } else {
     // Reachable only if contract.json gained a message marked implemented
-    // with nothing added here. Logged rather than ignored: the page will
-    // look like it did nothing, and this says why.
+    // with nothing added here. The page will look like it did nothing.
     LOG(ERROR) << name
                << " is marked implemented in contract.json but has no case "
                   "in WegletMessageHandler::Dispatch";

@@ -1,4 +1,3 @@
 # Cargo's own output. The GN build puts its copy under the Chromium out/
 # directory, so nothing built ever belongs here.
 /target
-weglet-core/src/generated_addresses.rs

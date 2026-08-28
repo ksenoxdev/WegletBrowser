@@ -1,20 +1,19 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// rust/weglet-profile/src/paths.rs
+// The profile directory and the files inside it.
 
 use std::path::{Path, PathBuf};
 
-// Where the profile lives. One place that decides, so no two callers can
-// disagree about which directory is the profile.
+// Where the profile lives. One place decides, so no two callers can
+// disagree.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Paths {
     root: PathBuf,
 }
 
 impl Paths {
-    // Must agree with WegletBrowserContext::DefaultProfilePath on the C++
-    // side -- the engine's cookies and this crate's settings belong to the
-    // same profile and have to sit under the same directory.
+    // Must agree with WegletBrowserContext::DefaultProfilePath: the
+    // engine's cookies and this crate's settings share a directory.
     pub fn discover() -> Result<Self, crate::Error> {
         let root = platform_root().ok_or(crate::Error::NoProfileDirectory)?;
         Ok(Self {
@@ -35,10 +34,9 @@ impl Paths {
         self.root.join("settings.toml")
     }
 
-    // Optional data files. Present means the user wants their own list
-    // instead of the built-in one; absent -- which is the normal case --
-    // means the compiled-in table stands. Nothing is written to any of
-    // them, so a profile that never had one never gets one.
+    // Optional data files. Present means the user wants their own list;
+    // absent means the compiled-in table stands. Nothing is ever written
+    // to them.
     pub fn blocklist_file(&self) -> PathBuf {
         self.root.join("blocklist.txt")
     }
@@ -57,6 +55,22 @@ impl Paths {
 
     pub fn session_file(&self) -> PathBuf {
         self.root.join("session.toml")
+    }
+
+    pub fn bookmarks_file(&self) -> PathBuf {
+        self.root.join("bookmarks.toml")
+    }
+
+    pub fn history_file(&self) -> PathBuf {
+        self.root.join("history.toml")
+    }
+
+    pub fn downloads_file(&self) -> PathBuf {
+        self.root.join("downloads.toml")
+    }
+
+    pub fn threat_feed_file(&self) -> PathBuf {
+        self.root.join("threat-feed.toml")
     }
 }
 

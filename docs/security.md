@@ -9,8 +9,7 @@ argument is here.
 
 **No request the user did not ask for.** Opening the browser, opening a
 tab, opening a settings page: none of these talk to the network. There is
-no telemetry, no update ping, no safe-browsing lookup, no favicon fetch,
-no font fetch, no metrics upload.
+no telemetry, no update ping, no font fetch, no metrics upload.
 
 This is a constraint on the code, not a preference, and it is what several
 otherwise-odd decisions are for:
@@ -19,16 +18,24 @@ otherwise-odd decisions are for:
   embedded by `ui/build_ui.py` and referenced by `@font-face` rules
   generated into `tokens.css`.
 - **Icons are path data in `ui/src/icons.ts`**, not fetched SVGs.
-- **The new tab page draws a letter, not a favicon.** Asking a third party
-  for a site's icon tells that party what the user has pinned. The tab
-  strip does the same: only Weglet's own pages get a mark.
+- **The new tab page draws a letter, not a favicon, by default.** Asking a
+  third party for a site's icon tells that party what the user has
+  pinned or has open, before they have typed or clicked anything else.
+  The tab strip and the bookmarks list do the same. Settings' Appearance
+  tab has a "Show site icons" toggle, off by default, that turns this on
+  -- accepting only after a warning, since re-enabling it is exactly the
+  trade-off the paragraph above describes. `weglet_favicons_enabled` /
+  `weglet_set_favicons_enabled` carry the setting; `img-src` in
+  `weglet_web_ui_data_source.cc` is the only CSP directive that allows an
+  off-machine request at all, and only for images.
 - **`WegletBrowserContext` returns `nullptr`** for the push messaging
   service, the platform notification service and the background sync
   controller. Each of those is a subsystem that can open a connection on
   its own.
 - **`chrome://weglet/` has `default-src 'none'`.** A page of ours has no
-  CSP source that reaches off the machine at all, so a future mistake
-  fails loudly instead of quietly phoning home.
+  CSP source that reaches off the machine at all beyond the favicon
+  exception above, so a future mistake elsewhere fails loudly instead of
+  quietly phoning home.
 
 ## The privilege boundary
 

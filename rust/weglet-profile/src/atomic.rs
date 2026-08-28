@@ -1,7 +1,5 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// rust/weglet-profile/src/atomic.rs
-//
 // The only way this crate writes to disk.
 
 use std::io::Write;
@@ -9,14 +7,10 @@ use std::path::Path;
 
 use crate::Error;
 
-// Writes to a sibling temp file, flushes it to the platter, then renames
-// over the target. A rename within one directory is atomic everywhere we
-// ship, so a reader sees either the whole old file or the whole new one.
-//
-// The alternative, std::fs::write, leaves a truncated file behind if the
-// process dies mid-write. For settings.toml that reads back as invalid
-// TOML, which the caller turns into "use defaults" -- silently discarding
-// every preference the user had, including their block list.
+// Writes a sibling temp file, flushes it to the platter, then renames over
+// the target. A reader sees either the whole old file or the whole new
+// one. std::fs::write leaves a truncated file behind if the process dies
+// mid-write, and truncated settings.toml reads back as "use defaults".
 pub fn write(path: &Path, contents: &str) -> Result<(), Error> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     std::fs::create_dir_all(parent).map_err(|source| Error::Write {
@@ -24,8 +18,8 @@ pub fn write(path: &Path, contents: &str) -> Result<(), Error> {
         source,
     })?;
 
-    // Same directory, so the rename below never crosses a filesystem. The
-    // process id keeps two instances from fighting over one temp name.
+    // Same directory, so the rename never crosses a filesystem. The
+    // process id keeps two instances off one temp name.
     let temp_path = path.with_extension(format!("tmp{}", std::process::id()));
 
     let write_temp = || -> std::io::Result<()> {
@@ -72,8 +66,8 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "a = 1\n");
     }
 
-    // The failure this exists to prevent: a shorter write leaving the tail
-    // of the previous contents behind.
+    // The failure this exists to prevent: a shorter write leaving the
+    // tail of the previous contents behind.
     #[test]
     fn a_shorter_write_replaces_the_longer_one_completely() {
         let path = dir("replace").join("f.toml");

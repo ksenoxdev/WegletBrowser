@@ -1,32 +1,22 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// weglet/ui/src/anim.ts
+// Hover and pointer motion for the pages.
 //
-// What makes the interface feel like it has weight.
-//
-// Nothing here is a CSS transition. A transition is a state flip with a
-// duration on it: it starts from wherever the element was, runs for a fixed
-// time and stops. Exponential relaxation instead means a control under the
-// pointer is always heading towards where it should be at a rate
-// proportional to how far off it is -- move the pointer away halfway
-// through and it turns around from exactly where it got to, with no
-// discontinuity and no queued animation to cancel.
-//
-// One requestAnimationFrame loop drives every registered strip and stops
-// itself the moment everything has settled, so an idle window costs nothing.
+// Exponential relaxation rather than CSS transitions: a control always
+// heads toward its target at a rate proportional to distance, so
+// reversing mid-flight just turns it around with nothing to cancel. One
+// requestAnimationFrame loop drives every strip and stops once settled.
 
 import { tokens } from "./tokens.js";
 
-// Time constant of the relaxation, in seconds. At this value a control
-// reaches about 63% of the way in 55ms and is visually done in about 150ms
-// -- fast enough to feel immediate, slow enough to read as movement.
+// Time constant of the relaxation, in seconds. About 63% of the way in
+// 55ms, visually done in about 150ms.
 const HOVER_TAU = tokens.motionHoverTau / 1000;
 
-// How long a newly added element takes to arrive.
 const ENTER_MS = tokens.motionEnter;
 
-// Below this, a value is treated as having arrived. Without it the
-// exponential never exactly reaches its target and the loop never stops.
+// Below this a value has arrived. Without it the exponential never
+// reaches its target and the loop never stops.
 const SETTLED = 0.002;
 
 // Dock geometry, used only when a strip spreads.
@@ -54,8 +44,8 @@ function easeOutCubic(t: number): number {
   return 1 - inverse * inverse * inverse;
 }
 
-// Per-channel interpolation, because a colour halfway between two others is
-// not either of them with an opacity.
+// Per-channel, because a colour halfway between two others is not either
+// of them with an opacity.
 export function mixChannel(from: number, to: number, t: number): number {
   return Math.round(from + (to - from) * Math.min(1, Math.max(0, t)));
 }
@@ -74,17 +64,16 @@ export function mixRgb(
 
 export interface Presentation {
   // 0 when cold, 1 when the pointer is on it. Everything visual is a
-  // function of this rather than of a class being present.
+  // function of this, not of a class being present.
   readonly heat: number;
   // 0 to 1 over ENTER_MS after the element first appeared.
   readonly arrival: number;
   readonly scale: number;
 }
 
-// A row of controls where the one under the pointer heats up.
-//
-// With `spreads`, its neighbours warm too, falling off as a gaussian -- that
-// is the dock, where hovering one tile lifts the ones beside it.
+// A row of controls where the one under the pointer heats up. With
+// `spreads`, its neighbours warm too, falling off as a gaussian -- the
+// dock, where hovering one tile lifts the ones beside it.
 export class Strip {
   private hovered: number | null = null;
   private heat: number[] = [];
@@ -115,8 +104,7 @@ export class Strip {
       this.heat[i] = approach(current, target, dt, HOVER_TAU);
     }
 
-    // A strip is also moving while anything in it is still arriving, even
-    // with the pointer nowhere near.
+    // A strip is also moving while anything in it is still arriving.
     for (const born of this.born) {
       if (now - born < ENTER_MS) {
         moving = true;
@@ -133,9 +121,8 @@ export class Strip {
     return { heat, arrival, scale: 1 + (this.maxScale - 1) * heat };
   }
 
-  // Grows and shrinks with the number of controls. New slots are born now,
-  // so they animate in; existing ones keep their heat, so rebuilding the tab
-  // strip while the pointer rests on a tab does not reset it.
+  // New slots are born now so they animate in; existing ones keep their
+  // heat, so rebuilding the tab strip under the pointer does not reset it.
   private resize(count: number, now: number): void {
     while (this.heat.length < count) {
       this.heat.push(0);
@@ -157,8 +144,7 @@ export class Strip {
     }
     const offset = (index - this.hovered) * SLOT;
     const sigma = SLOT * SIGMA_SLOTS;
-    // Past three sigma the contribution is under a thousandth; computing it
-    // would just be arithmetic that rounds to the same pixel.
+    // Past three sigma the contribution rounds to the same pixel.
     if (Math.abs(offset) > sigma * 3) {
       return 0;
     }
@@ -183,9 +169,6 @@ export function register(
   registrations.push({ strip, count, render });
 }
 
-// Asks for a frame if one is not already pending. Called on every pointer
-// event; the loop stops on its own once nothing is moving, so there is no
-// idle cost and nothing to remember to cancel.
 export function scheduleFrame(): void {
   if (rafHandle === null) {
     rafHandle = requestAnimationFrame(tick);
@@ -206,11 +189,8 @@ function tick(now: number): void {
   }
 }
 
-// A ripple expanding from where the pointer actually landed, not from the
-// button's centre.
-//
-// The caller's CSS has to give the element `position: relative` and
-// `overflow: hidden`; this only creates and cleans up the element.
+// A ripple expanding from where the pointer landed. The caller's CSS has
+// to give the element `position: relative` and `overflow: hidden`.
 export function spawnRipple(el: HTMLElement, clientX: number, clientY: number): void {
   const rect = el.getBoundingClientRect();
   const x = clientX - rect.left;
@@ -232,11 +212,8 @@ export function spawnRipple(el: HTMLElement, clientX: number, clientY: number): 
   ripple.addEventListener("animationend", () => ripple.remove());
 }
 
-// One shared tooltip, moved to whichever control is hovered.
-//
-// No delay before it appears: a browser's own chrome shows tooltips
-// essentially instantly, and the OS's title="" delay feels broken next to
-// that. It is also why title="" is not used at all here.
+// One shared tooltip, moved to whichever control is hovered. No delay
+// before it appears, which is also why title="" is not used here.
 let tooltipEl: HTMLElement | null = null;
 
 function tooltip(): HTMLElement {
@@ -250,10 +227,13 @@ function tooltip(): HTMLElement {
   return el;
 }
 
-export function attachTooltip(el: HTMLElement, text: string): void {
+// A function rather than a plain string reads live at hover time -- the
+// toolbar's buttons attach once at page load, before the language of the
+// first push is known, and re-read this way rather than re-attaching.
+export function attachTooltip(el: HTMLElement, text: string | (() => string)): void {
   el.addEventListener("pointerenter", () => {
     const tip = tooltip();
-    tip.textContent = text;
+    tip.textContent = typeof text === "function" ? text() : text;
     const rect = el.getBoundingClientRect();
 
     const margin = 6;
@@ -261,8 +241,8 @@ export function attachTooltip(el: HTMLElement, text: string): void {
     const centre = rect.left + rect.width / 2 - width / 2;
     tip.style.left = `${Math.min(Math.max(centre, margin), window.innerWidth - width - margin)}px`;
 
-    // A window cannot paint past its own edge, and the toolbar is a short
-    // one -- so near the bottom the tooltip goes above the control instead.
+    // A window cannot paint past its own edge, and the toolbar is short,
+    // so near the bottom the tooltip goes above the control.
     if (rect.bottom + 32 <= window.innerHeight) {
       tip.style.top = `${rect.bottom + 6}px`;
       tip.style.bottom = "";

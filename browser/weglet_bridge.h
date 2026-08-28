@@ -1,28 +1,33 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// weglet/browser/weglet_bridge.h
+// The C++ side of the Rust FFI: tabs, history, settings, security.
 
 #ifndef WEGLET_BROWSER_WEGLET_BRIDGE_H_
 #define WEGLET_BROWSER_WEGLET_BRIDGE_H_
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
+#include "base/functional/callback_forward.h"
 #include "base/memory/raw_ptr_exclusion.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/sequence_checker.h"
 #include "base/time/time.h"
 
 class GURL;
 
+namespace network {
+class SharedURLLoaderFactory;
+class SimpleURLLoader;
+}  // namespace network
+
 // The opaque handle from rust/weglet_ffi.h, forward-declared at global
-// scope where the FFI header puts it. Declaring it inside namespace
-// weglet instead would silently create a second, unrelated type -- which
-// is exactly what it did.
-//
-// Declared rather than included so weglet_ffi.h stays confined to
-// weglet_bridge.cc.
+// scope where that header puts it. Declaring it inside namespace weglet
+// would create a second, unrelated type.
 extern "C" {
 struct WegletState;
 }
@@ -31,9 +36,8 @@ namespace weglet {
 
 // What the browser knows about its own tabs, held in Rust.
 //
-// Everything past this class is raw pointers and manual frees. Nothing
-// outside this file includes weglet_ffi.h, so if the boundary ever needs
-// changing there is exactly one place to look.
+// Nothing outside weglet_bridge.cc includes weglet_ffi.h, so the raw
+// pointers and manual frees are confined to one file.
 class WegletBridge {
  public:
   // 0 = nothing to say, 1 = warn, 2 = block. Mirrors the integers the
@@ -60,6 +64,29 @@ class WegletBridge {
     std::string url;
   };
 
+  struct BookmarkEntry {
+    std::string title;
+    std::string url;
+  };
+
+  struct HistoryEntry {
+    std::string query;
+    std::string url;
+    uint64_t visited_at = 0;
+  };
+
+  // 0 = in progress, 1 = completed, 2 = failed -- mirrors
+  // weglet_download_status_at exactly, so nothing here re-decides what
+  // the Rust side already decided.
+  struct DownloadEntry {
+    std::string filename;
+    uint32_t status = 0;
+    std::string size_label;
+    std::string error_message;
+    uint64_t started_at = 0;
+    std::string path;
+  };
+
   struct EngineChoice {
     std::string id;
     std::string label;
@@ -74,6 +101,9 @@ class WegletBridge {
     // "pill" | "rounded" | "square".
     std::string address_bar_shape;
     std::vector<std::string> blocked_hosts;
+    bool threat_feed_enabled = false;
+    uint64_t threat_feed_updated_at = 0;
+    bool threat_feed_last_update_failed = false;
   };
 
   WegletBridge();
@@ -81,17 +111,13 @@ class WegletBridge {
   WegletBridge& operator=(const WegletBridge&) = delete;
   ~WegletBridge();
 
-  // Windows. Every tab question is asked about one: the model used to
-  // hold a single flat tab list and a single active tab, so a second
-  // window would have shown the same tabs and disagreed about which was
-  // in front -- while this side already counted windows and quit when the
-  // last one closed.
+  // Windows. Every tab question is asked about one.
   std::vector<uint64_t> Windows() const;
   // 0 when the window ceiling is reached.
   uint64_t OpenWindow();
   bool CloseWindow(uint64_t window);
   // Which window a tab is in. 0 is a real id, so ask about the tab first
-  // if you need to tell it from "no such tab".
+  // to tell it from "no such tab".
   uint64_t TabWindow(uint64_t id) const;
 
   // Tabs, within one window. An id is global once you have it.
@@ -108,9 +134,7 @@ class WegletBridge {
   bool ActivateTabAt(uint64_t window, size_t position);
   bool ReorderTab(uint64_t id, size_t target);
 
-  // Navigation. Call Navigated for a new page and UrlReplaced for a
-  // redirect: the second does not add a history entry, so Back does not
-  // land the user back on the page that redirected them.
+  // UrlReplaced is for a redirect: no history entry, so Back skips it.
   void Navigated(uint64_t id, const GURL& url);
   void UrlReplaced(uint64_t id, const GURL& url);
   void TitleChanged(uint64_t id, const std::string& title);
@@ -128,92 +152,127 @@ class WegletBridge {
   bool EditShortcut(size_t index, const std::string& title, const std::string& url);
   bool RemoveShortcut(size_t index);
 
-  // What the user typed in the address bar, resolved to a URL. Search
-  // terms come back as a search URL for the configured engine.
+  // Bookmarks.
+  std::vector<BookmarkEntry> Bookmarks() const;
+  bool IsBookmarked(const std::string& url) const;
+  // Adds `url` if not already saved, removes it if it is. Returns
+  // whether the page is bookmarked after the call.
+  bool ToggleBookmark(const std::string& title, const std::string& url);
+  bool RemoveBookmark(size_t index);
+
+  // Browsing history: address-bar submissions, newest first.
+  std::vector<HistoryEntry> SearchHistory() const;
+  // `query` is what the user typed; `url` is where it resolved to.
+  void RecordHistory(const std::string& query, const std::string& url);
+  void ClearSearchHistory();
+
+  // Downloads, newest first. The four Download* calls mirror
+  // content::DownloadItem's own lifecycle -- see the .cc for who calls
+  // them.
+  std::vector<DownloadEntry> Downloads() const;
+  void DownloadStarted(const std::string& url, const std::string& path);
+  // `total_bytes` is -1 when the server sent no Content-Length.
+  void DownloadProgress(const std::string& url, uint64_t bytes_downloaded, int64_t total_bytes);
+  void DownloadCompleted(const std::string& url, uint64_t size_bytes);
+  void DownloadFailed(const std::string& url, const std::string& message);
+  void ClearDownloadHistory();
+
+  // OpenPhish's public feed of known-phishing URLs. See CheckThreatFeed.
+  bool ThreatFeedEnabled() const;
+  void SetThreatFeedEnabled(bool on);
+  // `body` is the feed's raw text; see RefreshThreatFeed. False when it
+  // doesn't look like a real feed -- the previous cache is left standing.
+  bool ApplyThreatFeed(const std::string& body);
+  uint64_t ThreatFeedUpdatedAt() const;
+  bool ThreatFeedLastUpdateFailed() const;
+
+  // Off by default: fetching a site's icon is itself a request to that
+  // site. See docs/security.md and WegletFaviconFetcher.
+  bool FaviconsEnabled() const;
+  void SetFaviconsEnabled(bool on);
+
+  // `on_done` runs once with whether the fetch+parse succeeded. Only one
+  // fetch is ever in flight; a new call replaces the previous one.
+  void RefreshThreatFeed(scoped_refptr<network::SharedURLLoaderFactory> factory,
+                        base::OnceCallback<void(bool)> on_done);
+
+  // What the user typed, resolved to a URL. Search terms become a search
+  // URL for the configured engine.
   std::string ResolveOmnibox(const std::string& input) const;
 
-  // What an assessment says. Advisory: a kWarning may be dismissed, a
-  // kBlock may not.
+  // Advisory: a kWarning may be dismissed, a kBlock may not.
   struct RiskAssessment {
     Risk level = Risk::kNone;
     std::string title;
     std::string reason;
-    // Empty when the assessment has no host to show -- an unparseable
-    // URL, for instance.
+    // Empty when there is no host to show.
     std::string host;
   };
 
-  // One call. There were four, and each re-ran the whole assessment from
-  // the URL: punycode, the public suffix list, the skeleton fold and every
-  // brand rule, four times over for one navigation.
+  // One call: each of the four it replaced re-ran the whole assessment.
   RiskAssessment AssessNavigation(const GURL& url) const;
-  // Just the level, for a caller that only has to decide. Skips building
-  // the three strings.
+  // Just the level, skipping the three strings.
   Risk AssessNavigationLevel(const GURL& url) const;
 
   bool IsHostBlocked(const std::string& host) const;
 
-  // The user's block list and the built-in one, asked about a whole URL.
-  // The host is pulled out on the Rust side, where the parser that knows
-  // a backslash ends the authority already lives.
-  //
-  // Shaped like AssessNavigation because the notice page cannot tell the
-  // two apart and should not have to: `level` is kBlock or kNone, and the
-  // wording comes from the same place as the heuristics'.
+  // The user's block list and the built-in one, asked about a whole URL
+  // (the host is pulled out Rust-side). Shaped like AssessNavigation.
   RiskAssessment CheckBlockList(const GURL& url) const;
   bool IsUrlBlocked(const GURL& url) const;
 
-  // Settings, gathered for the settings page in one call rather than a
-  // dozen -- storage's own advice, and the page needs all of it every time
-  // it renders anyway.
+  // Shaped like CheckBlockList. kNone when the setting is off -- checked
+  // here so only one place can disagree with the toggle.
+  RiskAssessment CheckThreatFeed(const GURL& url) const;
+
+  // Everything the settings page renders, in one call.
   SettingsSnapshot Settings() const;
   bool SetSearchEngine(const std::string& id);
   void SetCustomSearchUrl(const std::string& url);
   void SetRestoreSession(bool on);
   bool SetAccentColor(const std::string& color);
   bool SetAddressBarShape(const std::string& shape);
+  // Cheap, unlike Settings() (which rebuilds the engine list too), so
+  // every page's push can carry these without the full snapshot cost.
+  std::string Language() const;
+  bool SetLanguage(const std::string& language);
+  // "#RRGGBB".
+  std::string AccentColor() const;
+  // "pill" | "rounded" | "square".
+  std::string AddressBarShape() const;
   // False if the host was already blocked or could not be canonicalised.
   bool BlockHost(const std::string& host);
   bool UnblockHost(size_t index);
 
-  // Settings and session.
-  bool TermsAccepted() const;
-  void AcceptTerms();
-  // False when the session could not be written; the caller logs it,
-  // because losing the open tabs quietly is how a user finds out late.
+  // False when the session could not be written.
   bool SaveSession() const;
 
   // Settings changes are marked, not written -- an atomic write ends in
-  // fsync, and doing that inside the click that flipped a toggle put the
-  // disk on the UI thread. FlushSettings does the write; the browser main
-  // parts call it on a timer and again at shutdown. False when there was
-  // something to write and it could not be written.
+  // fsync, not for the UI thread. Flushed on a timer and at shutdown.
   bool SettingsDirty() const;
   bool FlushSettings();
 
-  // How often to call the two above. From the profile and bounded there:
-  // the right value depends on the machine, and neither a busy loop nor
-  // "never" is reachable from the settings file.
+  // From the profile, bounded there.
   base::TimeDelta SettingsFlushInterval() const;
   base::TimeDelta SessionSaveInterval() const;
 
  private:
-  // Takes a string from Rust and frees it. Every char* the FFI returns
-  // goes through here, so none of them can leak by being forgotten.
+  // Takes a string from Rust and frees it.
   static std::string TakeString(char* owned);
 
+  void OnThreatFeedFetched(scoped_refptr<network::SharedURLLoaderFactory> factory,
+                           base::OnceCallback<void(bool)> on_done,
+                           std::optional<std::string> body);
+
+  // Alive only while a fetch is in flight.
+  std::unique_ptr<network::SimpleURLLoader> threat_feed_loader_;
+
   // Opaque handle into the Rust side.
-  //
-  // RAW_PTR_EXCLUSION: this points into Rust's allocator, not Chromium's.
-  // raw_ptr instruments allocations made by PartitionAlloc; wrapping a
-  // pointer it never allocated is at best meaningless and at worst a
-  // false report. It is freed by weglet_state_free, not by delete, and it
-  // lives exactly as long as this object.
+  // RAW_PTR_EXCLUSION: this points into Rust's allocator, not
+  // PartitionAlloc, and is freed by weglet_state_free.
   RAW_PTR_EXCLUSION ::WegletState* state_ = nullptr;
 
-  // The Rust side has no locking, because the state it holds belongs to
-  // one thread by design. This is what catches a call from the wrong one
-  // in a debug build instead of at 3am in the field.
+  // The Rust side has no locking: its state belongs to one thread.
   SEQUENCE_CHECKER(sequence_checker_);
 };
 

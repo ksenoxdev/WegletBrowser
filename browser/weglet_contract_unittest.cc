@@ -1,15 +1,9 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// weglet/browser/weglet_contract_unittest.cc
-//
-// The generated contract, checked from the side that consumes it.
-//
-// generators_test.py checks that generate_contract.py produces the right
-// text. This checks that the text means the right thing once compiled --
-// which is a different question, and the one that matters for the C++
-// side. Most of it is constexpr, so most of these are also static_asserts
-// that have already fired by the time the test runs; they are written as
-// tests too so a failure names itself.
+// The generated contract, checked from the side that consumes it:
+// generators_test.py checks the text, this checks what it means once
+// compiled. Most of it is constexpr, so most of these are static_asserts
+// written as tests so a failure names itself.
 
 #include <string>
 
@@ -28,8 +22,8 @@ using contract::PageKind;
 // --- pages ------------------------------------------------------------
 
 TEST(WegletContractTest, EveryPageHasItsOwnKind) {
-  // A duplicate kind would make KindForPath return the wrong one for a
-  // real page, and the state service push the wrong payload to it.
+  // A duplicate kind would make KindForPath return the wrong one, and the
+  // state service push the wrong payload.
   for (const contract::Page& page : contract::kPages) {
     EXPECT_EQ(page.kind, contract::KindForPath(page.path))
         << "page " << page.path << " does not map back to its own kind";
@@ -39,8 +33,8 @@ TEST(WegletContractTest, EveryPageHasItsOwnKind) {
 }
 
 TEST(WegletContractTest, AnUnknownPathIsNotOneOfOurs) {
-  // The paths decide which pages get profile state pushed into them, so a
-  // near miss must not be a hit.
+  // The paths decide which pages get profile state, so a near miss must
+  // not be a hit.
   EXPECT_EQ(PageKind::kOther, contract::KindForPath(""));
   EXPECT_EQ(PageKind::kOther, contract::KindForPath("/newtab.html"));
   EXPECT_EQ(PageKind::kOther, contract::KindForPath("newtab.html.evil"));
@@ -67,8 +61,7 @@ TEST(WegletContractTest, EveryPushTargetsARealPage) {
 }
 
 TEST(WegletContractTest, APageWithNothingToPushGetsAnEmptyFunction) {
-  // The state service uses an empty answer to mean "nothing to send", so
-  // it has to be empty and not some other page's function.
+  // The state service uses an empty answer to mean "nothing to send".
   EXPECT_TRUE(contract::PushFunctionFor(PageKind::kOther).empty());
 }
 
@@ -85,8 +78,7 @@ TEST(WegletContractTest, PushFunctionsAreUnique) {
 // --- messages ---------------------------------------------------------
 
 TEST(WegletContractTest, MessageNamesAreUniqueAndNonEmpty) {
-  // A duplicate would register twice; content ignores the second, so one
-  // of them would silently never run.
+  // A duplicate would register twice, and content ignores the second.
   for (size_t i = 0; i < contract::kMessages.size(); ++i) {
     EXPECT_FALSE(contract::kMessages[i].name.empty());
     for (size_t j = i + 1; j < contract::kMessages.size(); ++j) {
@@ -97,16 +89,15 @@ TEST(WegletContractTest, MessageNamesAreUniqueAndNonEmpty) {
 
 TEST(WegletContractTest, EveryArityFitsTheArgumentArray) {
   // The handler reads args[0..arity), so an arity past the array would
-  // read past the end of a constexpr array.
+  // read past the end.
   for (const MessageSpec& spec : contract::kMessages) {
     EXPECT_LE(spec.arity, contract::kMaxMessageArgs) << spec.name;
     EXPECT_LE(spec.arity, spec.args.size()) << spec.name;
   }
 }
 
-// The messages the browser answers but does not act on. They are
-// registered on purpose -- content answers an unregistered chrome.send()
-// by crashing the browser process.
+// The messages the browser answers but does not act on. Registered on
+// purpose: an unregistered chrome.send() crashes the browser process.
 TEST(WegletContractTest, UnimplementedMessagesAreStillDeclared) {
   size_t unimplemented = 0;
   for (const MessageSpec& spec : contract::kMessages) {
@@ -115,9 +106,8 @@ TEST(WegletContractTest, UnimplementedMessagesAreStillDeclared) {
       EXPECT_FALSE(spec.name.empty());
     }
   }
-  // Not a fixed number -- this shrinks as features land. What matters is
-  // that the flag exists and some are marked, so the handler's branch is
-  // exercised rather than dead.
+  // Not a fixed number: this shrinks as features land. What matters is
+  // that some are marked, so the handler's branch is not dead.
   EXPECT_GT(contract::kMessages.size(), unimplemented)
       << "every message is unimplemented, which cannot be right";
 }
@@ -126,9 +116,7 @@ TEST(WegletContractTest, UnimplementedMessagesAreStillDeclared) {
 
 TEST(WegletContractTest, EveryInternalAddressResolvesToARealPage) {
   // The failure this list was created for: three addresses existed on the
-  // Rust side with nothing here to resolve them, so a tab could carry the
-  // label "Bookmarks" while the engine was handed a scheme it had never
-  // heard of.
+  // Rust side with nothing here to resolve them.
   for (const contract::InternalAddress& entry : contract::kInternalAddresses) {
     EXPECT_FALSE(entry.address.empty());
     EXPECT_NE(PageKind::kOther, contract::KindForPath(entry.page))
@@ -147,11 +135,9 @@ TEST(WegletContractTest, InternalAddressesAreUnique) {
 
 // --- the argument check the handler performs --------------------------
 //
-// A copy of WegletMessageHandler::Validate's rule, exercised against the
-// real specs. The handler's own function is private and needs a WebUI to
-// construct; what is worth pinning down is the rule, and that every spec
-// in the contract can actually be satisfied by some argument list -- an
-// ArgKind nothing can produce would be a message no page could ever send.
+// A copy of WegletMessageHandler::Validate's rule -- the handler's own is
+// private and needs a WebUI -- exercised against the real specs. An
+// ArgKind nothing can produce would be a message no page could send.
 
 bool Accepts(ArgKind kind, const base::Value& value) {
   switch (kind) {
@@ -195,9 +181,8 @@ TEST(WegletContractTest, EverySpecCanBeSatisfied) {
 }
 
 TEST(WegletContractTest, ATabIdMustParseAsOne) {
-  // The reason ids cross as strings: a JavaScript number is a double and
-  // cannot hold every u64 exactly, so an id sent as a number could round
-  // to a different tab.
+  // Why ids cross as strings: a JavaScript number is a double and cannot
+  // hold every u64 exactly.
   EXPECT_TRUE(Accepts(ArgKind::kTabId, base::Value("0")));
   EXPECT_TRUE(Accepts(ArgKind::kTabId, base::Value("18446744073709551615")));
   EXPECT_FALSE(Accepts(ArgKind::kTabId, base::Value("")));
@@ -210,8 +195,7 @@ TEST(WegletContractTest, ATabIdMustParseAsOne) {
 
 TEST(WegletContractTest, ANumberIsAPositionAndCannotBeNegative) {
   // Every number in the contract is an index into a list the page was
-  // shown; a negative one is not one, and would become a very large
-  // size_t.
+  // shown; a negative one would become a very large size_t.
   EXPECT_TRUE(Accepts(ArgKind::kNumber, base::Value(0)));
   EXPECT_TRUE(Accepts(ArgKind::kNumber, base::Value(7)));
   EXPECT_FALSE(Accepts(ArgKind::kNumber, base::Value(-1)));

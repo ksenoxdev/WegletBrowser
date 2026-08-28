@@ -1,6 +1,6 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// weglet/app/weglet_main_delegate.cc
+// ContentMainDelegate: logging, the resource pack, the client objects.
 
 #include "weglet/app/weglet_main_delegate.h"
 
@@ -22,19 +22,15 @@ WegletMainDelegate::WegletMainDelegate() = default;
 WegletMainDelegate::~WegletMainDelegate() = default;
 
 std::optional<int> WegletMainDelegate::BasicStartupComplete() {
-  // LOG_DEFAULT includes LOG_TO_FILE on Windows, and InitLogging CHECKs
-  // that a path came with it -- leaving the settings at their defaults
-  // aborts before the first window ever appears.
+  // LOG_DEFAULT implies LOG_TO_FILE on Windows, which CHECKs for a path
+  // the defaults don't set -- so the defaults abort before the first window.
   logging::LoggingSettings settings;
 
-  // Only the browser process writes the file. This runs in every process
-  // type, and a sandboxed renderer cannot open a file by path anyway --
-  // it would fail on every start for no benefit.
+  // A sandboxed renderer can't open a file by path.
   const bool is_browser_process = !base::CommandLine::ForCurrentProcess()
                                        ->HasSwitch(switches::kProcessType);
 
-  // Declared out here so it outlives InitLogging: log_file_path is a bare
-  // pointer into this string, not a copy of it.
+  // Must outlive InitLogging: log_file_path points into this string.
   base::FilePath log_path;
   if (is_browser_process) {
     base::FilePath dir;
@@ -50,15 +46,11 @@ std::optional<int> WegletMainDelegate::BasicStartupComplete() {
   }
   logging::InitLogging(settings);
 
-  // std::nullopt means "carry on with startup". Returning a value here
-  // would exit the process with it as the code, which is how
-  // --version-style switches are handled.
   return std::nullopt;
 }
 
 void WegletMainDelegate::PreSandboxStartup() {
-  // Must happen here: the renderer's sandbox closes right after this
-  // returns, and it cannot open weglet.pak once it has.
+  // The renderer's sandbox closes right after this returns.
   InitializeResourceBundle();
 }
 

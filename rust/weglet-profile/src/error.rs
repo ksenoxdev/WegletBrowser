@@ -1,10 +1,10 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// rust/weglet-profile/src/error.rs
+// The error type for reads and writes in this crate.
 
 use std::path::PathBuf;
 
-// Carries the path in every variant. "failed to parse settings" with no
+// Carries the path in every variant: "failed to parse settings" with no
 // file name is a bug report nobody can act on.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

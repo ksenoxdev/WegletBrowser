@@ -1,8 +1,7 @@
 # Copyright 2026 Weglet - Licensed under Apache 2.0
 #
-# Only the public surface. Reaching into content/browser or blink from
-# here would compile, but it would also tie Weglet to Chromium's
-# internals and turn every upstream refactor into our problem.
+# Only content's public surface. Reaching into content/browser or blink
+# would compile, and would make every upstream refactor our problem.
 
 include_rules = [
   "+base",
@@ -17,9 +16,7 @@ include_rules = [
   "+sandbox",
   "+ui/aura",
   "+ui/base",
-  # Keyboard codes, for the accelerators the window registers. Public UI
-  # headers like everything else here: nothing under ui/events/blink or
-  # any other internal path.
+  # Keyboard codes for the window's accelerators.
   "+ui/events/keycodes",
   "+ui/display",
   "+ui/gfx",

@@ -1,19 +1,69 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// weglet/browser/weglet_bridge.cc
+// The C++ side of the Rust FFI: tabs, history, settings, security.
 
 #include "weglet/browser/weglet_bridge.h"
 
 #include "base/check.h"
+#include "base/functional/bind.h"
+#include "net/traffic_annotation/network_traffic_annotation.h"
+#include "services/network/public/cpp/resource_request.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
+#include "services/network/public/cpp/simple_url_loader.h"
 #include "url/gurl.h"
 #include "weglet/rust/weglet_ffi.h"
 
 namespace weglet {
 
+namespace {
+
+// OpenPhish's public feed -- see weglet-security/src/threat_feed.rs for
+// what happens to it once it arrives. Never sent anywhere that would
+// reveal a URL the user visited: this is the one request that goes out
+// unconditionally, and it is always the same request.
+constexpr char kThreatFeedUrl[] =
+    "https://raw.githubusercontent.com/openphish/public_feed/refs/heads/"
+    "main/feed.txt";
+constexpr size_t kMaxThreatFeedBytes = 2 * 1024 * 1024;
+
+net::NetworkTrafficAnnotationTag ThreatFeedTrafficAnnotation() {
+  return net::DefineNetworkTrafficAnnotation("weglet_threat_feed", R"(
+      semantics {
+        sender: "Weglet Threat Feed"
+        description:
+          "Downloads OpenPhish's public feed of known-phishing URLs. "
+          "Weglet keeps only salted-free SHA-256 hashes of the feed's own "
+          "entries and checks browsing URLs against them locally -- the "
+          "request carries no information about what the user is "
+          "browsing."
+        trigger:
+          "The user opens Weglet with phishing protection on, or presses "
+          "Refresh now in Settings."
+        data: "None. The request has no parameters and no user data."
+        destination: OTHER
+        internal {
+          contacts {
+            email: "security@weglet.example"
+          }
+        }
+        user_data {
+          type: NONE
+        }
+        last_reviewed: "2026-01-01"
+      }
+      policy {
+        cookies_allowed: NO
+        setting: "Disable phishing protection in Settings > Security."
+        policy_exception_justification:
+          "Not yet controlled by an enterprise policy."
+      })");
+}
+
+}  // namespace
+
 WegletBridge::WegletBridge() : state_(weglet_state_new()) {
-  // Nothing downstream can work without it, and every method would have
-  // to check. Failing here means failing at startup, where the browser
-  // main parts can still put a message on screen.
+  // Failing here means failing at startup, where a message can still
+  // reach the screen.
   CHECK(state_) << "could not create the Weglet state";
 }
 
@@ -183,6 +233,190 @@ bool WegletBridge::RemoveShortcut(size_t index) {
   return weglet_remove_shortcut(state_, index);
 }
 
+std::vector<WegletBridge::BookmarkEntry> WegletBridge::Bookmarks() const {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  const size_t count = weglet_bookmark_count(state_);
+  std::vector<BookmarkEntry> bookmarks;
+  bookmarks.reserve(count);
+  for (size_t index = 0; index < count; ++index) {
+    bookmarks.push_back({
+        TakeString(weglet_bookmark_title_at(state_, index)),
+        TakeString(weglet_bookmark_url_at(state_, index)),
+    });
+  }
+  return bookmarks;
+}
+
+bool WegletBridge::IsBookmarked(const std::string& url) const {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  return weglet_is_bookmarked(state_, url.c_str());
+}
+
+bool WegletBridge::ToggleBookmark(const std::string& title, const std::string& url) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  return weglet_toggle_bookmark(state_, title.c_str(), url.c_str());
+}
+
+bool WegletBridge::RemoveBookmark(size_t index) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  return weglet_remove_bookmark(state_, index);
+}
+
+std::vector<WegletBridge::HistoryEntry> WegletBridge::SearchHistory() const {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  const size_t count = weglet_history_count(state_);
+  std::vector<HistoryEntry> entries;
+  entries.reserve(count);
+  for (size_t index = 0; index < count; ++index) {
+    entries.push_back({
+        TakeString(weglet_history_query_at(state_, index)),
+        TakeString(weglet_history_url_at(state_, index)),
+        weglet_history_visited_at_at(state_, index),
+    });
+  }
+  return entries;
+}
+
+void WegletBridge::RecordHistory(const std::string& query, const std::string& url) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  weglet_record_history(state_, query.c_str(), url.c_str());
+}
+
+void WegletBridge::ClearSearchHistory() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  weglet_clear_search_history(state_);
+}
+
+std::vector<WegletBridge::DownloadEntry> WegletBridge::Downloads() const {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  const size_t count = weglet_download_count(state_);
+  std::vector<DownloadEntry> downloads;
+  downloads.reserve(count);
+  for (size_t index = 0; index < count; ++index) {
+    downloads.push_back({
+        TakeString(weglet_download_filename_at(state_, index)),
+        weglet_download_status_at(state_, index),
+        TakeString(weglet_download_size_label_at(state_, index)),
+        TakeString(weglet_download_error_message_at(state_, index)),
+        weglet_download_started_at_at(state_, index),
+        TakeString(weglet_download_path_at(state_, index)),
+    });
+  }
+  return downloads;
+}
+
+void WegletBridge::DownloadStarted(const std::string& url, const std::string& path) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  weglet_download_started(state_, url.c_str(), path.c_str());
+}
+
+void WegletBridge::DownloadProgress(const std::string& url,
+                                    uint64_t bytes_downloaded,
+                                    int64_t total_bytes) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  weglet_download_progress(state_, url.c_str(), bytes_downloaded, total_bytes);
+}
+
+void WegletBridge::DownloadCompleted(const std::string& url, uint64_t size_bytes) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  weglet_download_completed(state_, url.c_str(), size_bytes);
+}
+
+void WegletBridge::DownloadFailed(const std::string& url, const std::string& message) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  weglet_download_failed(state_, url.c_str(), message.c_str());
+}
+
+void WegletBridge::ClearDownloadHistory() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  weglet_clear_download_history(state_);
+}
+
+bool WegletBridge::ThreatFeedEnabled() const {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  return weglet_threat_feed_enabled(state_);
+}
+
+void WegletBridge::SetThreatFeedEnabled(bool on) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  weglet_set_threat_feed_enabled(state_, on);
+}
+
+bool WegletBridge::FaviconsEnabled() const {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  return weglet_favicons_enabled(state_);
+}
+
+void WegletBridge::SetFaviconsEnabled(bool on) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  weglet_set_favicons_enabled(state_, on);
+}
+
+bool WegletBridge::ApplyThreatFeed(const std::string& body) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  return weglet_apply_threat_feed(state_, body.c_str());
+}
+
+uint64_t WegletBridge::ThreatFeedUpdatedAt() const {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  return weglet_threat_feed_updated_at(state_);
+}
+
+bool WegletBridge::ThreatFeedLastUpdateFailed() const {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  return weglet_threat_feed_last_update_failed(state_);
+}
+
+void WegletBridge::RefreshThreatFeed(
+    scoped_refptr<network::SharedURLLoaderFactory> factory,
+    base::OnceCallback<void(bool)> on_done) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  auto request = std::make_unique<network::ResourceRequest>();
+  request->url = GURL(kThreatFeedUrl);
+  request->credentials_mode = network::mojom::CredentialsMode::kOmit;
+
+  // Replaces whatever the previous fetch was doing; its loader is
+  // destroyed, which cancels it -- there is only ever one feed to have.
+  threat_feed_loader_ =
+      network::SimpleURLLoader::Create(std::move(request), ThreatFeedTrafficAnnotation());
+  network::SimpleURLLoader* loader = threat_feed_loader_.get();
+  // Unretained: this owns the loader, so the callback cannot outlive it.
+  // `factory` is bound to keep it alive for the request's duration.
+  loader->DownloadToString(
+      factory.get(),
+      base::BindOnce(&WegletBridge::OnThreatFeedFetched, base::Unretained(this),
+                     factory, std::move(on_done)),
+      kMaxThreatFeedBytes);
+}
+
+void WegletBridge::OnThreatFeedFetched(
+    scoped_refptr<network::SharedURLLoaderFactory> factory,
+    base::OnceCallback<void(bool)> on_done,
+    std::optional<std::string> body) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  threat_feed_loader_.reset();
+  if (!body) {
+    std::move(on_done).Run(false);
+    return;
+  }
+  std::move(on_done).Run(ApplyThreatFeed(*body));
+}
+
+WegletBridge::RiskAssessment WegletBridge::CheckThreatFeed(const GURL& url) const {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  char* title = nullptr;
+  char* reason = nullptr;
+  const bool matched =
+      weglet_is_known_phishing(state_, url.spec().c_str(), &title, &reason);
+
+  RiskAssessment assessment;
+  assessment.level = matched ? Risk::kBlock : Risk::kNone;
+  assessment.title = TakeString(title);
+  assessment.reason = TakeString(reason);
+  assessment.host = std::string(url.host());
+  return assessment;
+}
+
 std::string WegletBridge::ResolveOmnibox(const std::string& input) const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   return TakeString(weglet_omnibox_resolve(state_, input.c_str()));
@@ -190,9 +424,8 @@ std::string WegletBridge::ResolveOmnibox(const std::string& input) const {
 
 namespace {
 
-// The integers weglet_assess_navigation returns. Anything unrecognised is
-// "nothing to say" rather than a block: a mismatch between the two sides
-// must not make the browser refuse to load pages.
+// weglet_assess_navigation's return codes. Unrecognised = "nothing to
+// say": a mismatch must not stop pages from loading.
 WegletBridge::Risk RiskFromLevel(uint32_t level) {
   switch (level) {
     case 2:
@@ -217,9 +450,8 @@ WegletBridge::RiskAssessment WegletBridge::AssessNavigation(
 
   RiskAssessment assessment;
   assessment.level = RiskFromLevel(level);
-  // Taken unconditionally: the Rust side writes every non-null out-param
-  // even on a "nothing to say" answer, so all three are owned strings
-  // that have to be freed whatever the level was.
+  // The Rust side writes every non-null out-param even on a "nothing to
+  // say" answer, so all three have to be freed.
   assessment.title = TakeString(title);
   assessment.reason = TakeString(reason);
   assessment.host = TakeString(host);
@@ -264,6 +496,11 @@ WegletBridge::SettingsSnapshot WegletBridge::Settings() const {
         TakeString(weglet_blocked_host_at(state_, index)));
   }
 
+  snapshot.threat_feed_enabled = weglet_threat_feed_enabled(state_);
+  snapshot.threat_feed_updated_at = weglet_threat_feed_updated_at(state_);
+  snapshot.threat_feed_last_update_failed =
+      weglet_threat_feed_last_update_failed(state_);
+
   return snapshot;
 }
 
@@ -292,6 +529,26 @@ bool WegletBridge::SetAddressBarShape(const std::string& shape) {
   return weglet_set_address_bar_shape(state_, shape.c_str());
 }
 
+std::string WegletBridge::Language() const {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  return TakeString(weglet_language(state_));
+}
+
+bool WegletBridge::SetLanguage(const std::string& language) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  return weglet_set_language(state_, language.c_str());
+}
+
+std::string WegletBridge::AccentColor() const {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  return TakeString(weglet_accent_color(state_));
+}
+
+std::string WegletBridge::AddressBarShape() const {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  return TakeString(weglet_address_bar_shape(state_));
+}
+
 bool WegletBridge::BlockHost(const std::string& host) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   return weglet_block_host(state_, host.c_str());
@@ -312,8 +569,7 @@ WegletBridge::RiskAssessment WegletBridge::CheckBlockList(
 
   RiskAssessment assessment;
   assessment.level = blocked ? Risk::kBlock : Risk::kNone;
-  // Taken whatever the answer was: both are written either way, so both
-  // are owned strings that have to be freed.
+  // Both out-params are written either way, so both have to be freed.
   assessment.title = TakeString(title);
   assessment.reason = TakeString(reason);
   assessment.host = std::string(url.host());
@@ -324,16 +580,6 @@ bool WegletBridge::IsUrlBlocked(const GURL& url) const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   // Nulls: the caller wants the decision, not the wording.
   return weglet_is_url_blocked(state_, url.spec().c_str(), nullptr, nullptr);
-}
-
-bool WegletBridge::TermsAccepted() const {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  return weglet_terms_accepted(state_);
-}
-
-void WegletBridge::AcceptTerms() {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  weglet_accept_terms(state_);
 }
 
 bool WegletBridge::SaveSession() const {

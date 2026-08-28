@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<!-- Copyright 2026 Weglet - Licensed under Apache 2.0
+
+     Two tabs behind the same segmented switcher settings.html uses: address
+     bar submissions, and the full downloads list. Structure only; filled in
+     and wired by history.ts. Neither list has a store behind it yet, so
+     both are always empty for now -- see WegletStateService::BuildFor.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>History</title>
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="base.css" />
+    <link rel="stylesheet" href="history.css" />
+  </head>
+  <body>
+    <div class="page">
+      <div class="header">
+        <h1 data-i18n="history.title">History</h1>
+        <div class="header-actions">
+          <button class="clear-btn" id="clear-active-tab">Clear</button>
+          <button class="done" id="done" data-i18n="history.done">Done</button>
+        </div>
+      </div>
+
+      <div class="switcher" id="switcher" role="tablist" aria-label="History sections">
+        <div class="switcher-pill" id="switcher-pill" aria-hidden="true"></div>
+        <div class="switcher-tab active" id="tab-search" data-panel="search" role="tab" tabindex="0" data-i18n="history.searchTab">
+          Search history
+        </div>
+        <div class="switcher-tab" id="tab-downloads" data-panel="downloads" role="tab" tabindex="0" data-i18n="history.downloadsTab">
+          Downloaded files
+        </div>
+      </div>
+
+      <div class="panel" data-panel="search" role="tabpanel" aria-labelledby="tab-search">
+        <div id="search-list"></div>
+      </div>
+      <div class="panel" data-panel="downloads" role="tabpanel" aria-labelledby="tab-downloads" hidden>
+        <div id="downloads-list"></div>
+      </div>
+    </div>
+    <script type="module" src="history.js"></script>
+  </body>
+</html>

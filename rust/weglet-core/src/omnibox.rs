@@ -1,7 +1,5 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// rust/weglet-core/src/omnibox.rs
-//
 // What the address bar does with what the user typed.
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -10,11 +8,9 @@ pub enum Action {
     Search(String),
 }
 
-// Decides between "go there" and "search for that".
-//
-// The bias is towards searching. Guessing wrong towards navigation sends
-// the user to a host they did not mean to visit and leaks the query in a
-// DNS lookup; guessing wrong towards search just shows results.
+// Decides between "go there" and "search for that", biased towards
+// searching: guessing wrong towards navigation visits a host the user did
+// not mean and leaks the query in a DNS lookup.
 pub fn parse(input: &str) -> Action {
     let text = input.trim();
     if text.is_empty() {
@@ -26,23 +22,21 @@ pub fn parse(input: &str) -> Action {
         return Action::Navigate(text.to_string());
     }
 
-    // An explicit scheme is the user being unambiguous. Whether the target
-    // is safe is weglet-security's decision, not this function's.
+    // An explicit scheme is unambiguous. Whether the target is safe is
+    // weglet-security's decision.
     if has_explicit_scheme(text) {
         return Action::Navigate(text.to_string());
     }
 
-    // Whitespace inside means a sentence, not a hostname -- even though
-    // "a b.com" technically has a dot in it.
+    // Whitespace means a sentence, not a hostname.
     if text.chars().any(char::is_whitespace) {
         return Action::Search(text.to_string());
     }
 
     let authority = text.split(['/', '\\', '?', '#']).next().unwrap_or_default();
 
-    // Typed userinfo is a search. "google.com@evil.example" reads as
-    // Google to a person and resolves to evil.example, so treating it as
-    // an address is exactly the wrong call.
+    // Typed userinfo is a search: "google.com@evil.example" reads as
+    // Google and resolves to evil.example.
     if authority.contains('@') {
         return Action::Search(text.to_string());
     }
@@ -84,15 +78,15 @@ fn looks_like_a_host(host: &str) -> bool {
     if host == "localhost" || host.starts_with('[') || is_ipv4(host) {
         return true;
     }
-    // A dot alone is not enough -- "hello." and ".com" are not hosts --
-    // so both sides of the last dot have to be real labels.
+    // "hello." and ".com" are not hosts, so both sides of the last dot
+    // have to be real labels.
     let Some((name, tld)) = host.rsplit_once('.') else {
         return false;
     };
     if name.is_empty() || tld.len() < 2 {
         return false;
     }
-    // A numeric TLD means it was probably a version number or a decimal.
+    // A numeric TLD is probably a version number or a decimal.
     if tld.chars().all(|c| c.is_ascii_digit()) {
         return false;
     }
@@ -109,8 +103,8 @@ fn is_label(label: &str) -> bool {
             .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || !c.is_ascii())
 }
 
-// Written out rather than leaning on u8::from_str, which accepts a
-// leading "+" and would make "+1.+1.+1.+1" an address.
+// Written out rather than u8::from_str, which accepts a leading "+" and
+// would make "+1.+1.+1.+1" an address.
 fn is_ipv4(host: &str) -> bool {
     let mut labels = 0;
     for label in host.split('.') {
@@ -193,8 +187,7 @@ mod tests {
         assert_eq!(parse("[::1]:9229/x"), nav("https://[::1]:9229/x"));
     }
 
-    // "+1" parses as 1 through u8::from_str, which used to make this an
-    // IP address.
+    // "+1" parses as 1 through u8::from_str.
     #[test]
     fn a_signed_number_is_not_an_ip_address() {
         assert_eq!(parse("+1.+1.+1.+1"), search("+1.+1.+1.+1"));
@@ -209,7 +202,7 @@ mod tests {
             parse("google.com@evil.example"),
             search("google.com@evil.example")
         );
-        // But a full URL the user pasted is still honoured; the credential
+        // A full URL the user pasted is still honoured; the credential
         // check lives in weglet-security.
         assert_eq!(
             parse("https://user@example.com/x"),
@@ -246,8 +239,8 @@ mod tests {
 
     #[test]
     fn a_backslash_ends_the_authority() {
-        // Reads as host "example.com", so it navigates -- and
-        // weglet-security blocks the backslash separately.
+        // Reads as host "example.com"; the backslash is weglet-security's
+        // problem.
         assert_eq!(
             parse("example.com\\@evil.example"),
             nav("https://example.com\\@evil.example")

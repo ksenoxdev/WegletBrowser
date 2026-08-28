@@ -1,6 +1,6 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// weglet/browser/weglet_navigation_throttle.h
+// Runs the security guard on every navigation and redirect.
 
 #ifndef WEGLET_BROWSER_WEGLET_NAVIGATION_THROTTLE_H_
 #define WEGLET_BROWSER_WEGLET_NAVIGATION_THROTTLE_H_
@@ -14,17 +14,10 @@ class NavigationThrottleRegistry;
 namespace weglet {
 
 // Asks WegletSecurityGuard about every navigation the network stack
-// starts, and about every redirect within one.
+// starts, and about every redirect within one -- which is how a shortener
+// resolving to a lookalike arrives.
 //
-// This is the extension point that was named in a comment and never
-// used. Until it existed, the assessment ran in exactly one place -- the
-// omnibox -- so a link, a redirect, or a tab restored from the last
-// session was never checked. A shortener that resolves to a lookalike is
-// precisely the case the heuristics were written for, and precisely the
-// case that arrives as a redirect.
-//
-// Registered by WegletContentBrowserClient::CreateThrottlesForNavigation,
-// which is content's own hook: no patch to the Chromium tree.
+// Registered by WegletContentBrowserClient::CreateThrottlesForNavigation.
 class WegletNavigationThrottle : public content::NavigationThrottle {
  public:
   // Adds one to `registry` if this navigation is worth watching.

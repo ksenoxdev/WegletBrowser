@@ -38,25 +38,17 @@ body {
 .done {
   position: relative;
   overflow: hidden;
-  background: var(--color-accent-solid);
-  color: var(--color-on-accent-solid);
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-text);
   border-radius: var(--radius-pill);
-  padding: var(--space-md) var(--space-xxl);
-  font-family: "Instrument Sans", sans-serif;
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-bold);
+  padding: var(--space-sm) var(--space-lg);
+  font-size: var(--font-size-sm);
   cursor: pointer;
-  /* A glow rather than a drop shadow: the button is the accent colour, and a
-     dark shadow under it would read as a lift off the page instead of as the
-     one thing here that is lit. */
-  box-shadow: 0 0 14px color-mix(in srgb, var(--color-ring) 25%, transparent);
-  transition: background var(--motion-fast), box-shadow var(--motion-fast);
 }
 
 .done:hover {
-  background: var(--color-ring);
-  box-shadow: 0 0 20px color-mix(in srgb, var(--color-ring) 40%, transparent);
+  background: rgba(255, 255, 255, 0.12);
 }
 
 /* A glass pill that slides behind the active tab rather than four tabs that

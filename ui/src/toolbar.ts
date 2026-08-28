@@ -1,6 +1,6 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// weglet/ui/src/toolbar.ts
+// The toolbar: tab strip, address bar, window controls.
 
 import {
   attachTooltip,
@@ -12,22 +12,21 @@ import {
   Strip,
 } from "./anim.js";
 import {byId, el, runPage} from "./dom.js";
+import { faviconUrl } from "./favicon.js";
+import { applyI18n, t, type Language } from "./i18n.js";
 import { setIcon, type IconName } from "./icons.js";
 import { onState, pageUrl, pages, send, type BrowserState, type TabState } from "./protocol.js";
+import { applyAccent, applyAddressBarShape, liveChannels } from "./theme.js";
 import { channels, tokens } from "./tokens.js";
 
-// Channel values come from the generator, not from here: they are the same
-// colours as tokens.css, and a triplet written out by hand is the same
-// number in two places. The hover tint in particular is a color-mix that
-// nobody can recompute by eye -- it was wrong here before the generator
-// produced it.
+// surfaceHover comes from theme.ts's liveChannels, not destructured
+// here like the rest, since applyAccent retints it at runtime.
 const {
   textDim: TEXT_DIM,
   text: TEXT,
   surfaceRaised: SURFACE_RAISED,
   border: BORDER,
   borderStrong: BORDER_STRONG,
-  surfaceHover: SURFACE_HOVER,
   danger: DANGER,
   background: BACKGROUND,
 } = channels;
@@ -49,23 +48,35 @@ function rgba(colour: readonly [number, number, number], alpha: number): string 
 
 interface Button {
   readonly el: HTMLElement;
-  // Disabled buttons take no heat at all: a control that lights up and then
-  // does nothing is worse than one that stays dim.
+  // Disabled buttons take no heat: a control that lights up and does
+  // nothing is worse than one that stays dim.
   disabled: boolean;
 }
 
 const buttons: Button[] = [];
 const buttonStrip = new Strip(1.08, false);
 
+// Read by tooltip getters, which fire on pointerenter -- long after the
+// buttons were wired at module load, when the first push's language
+// was not yet known.
+let currentLanguage: Language = "en";
+
 function navButton(
   id: string,
   iconName: IconName,
-  tooltipText: string,
+  tooltipKey: string,
   onActivate: (event: MouseEvent) => void,
+  // Where the icon lands. Defaults to the button itself; downloads-button
+  // passes its icon slot instead, so setIcon's replaceChildren does not
+  // wipe out the spinner markup sitting beside that slot.
+  iconHost?: Element,
+  // Off for bookmark-toggle: its own state change (outline -> filled) is
+  // feedback enough, and a ripple under that read as two things happening.
+  ripple = true,
 ): Button {
   const node = byId(id);
-  setIcon(node, iconName);
-  attachTooltip(node, tooltipText);
+  setIcon(iconHost ?? node, iconName);
+  attachTooltip(node, () => t(tooltipKey, currentLanguage));
 
   const button: Button = { el: node, disabled: false };
   const index = buttons.length;
@@ -86,7 +97,9 @@ function navButton(
       return;
     }
     onActivate(event);
-    spawnRipple(node, event.clientX, event.clientY);
+    if (ripple) {
+      spawnRipple(node, event.clientX, event.clientY);
+    }
   });
   // A div standing in for a button has to answer the keyboard like one.
   node.addEventListener("keydown", (event: Event) => {
@@ -103,8 +116,8 @@ function setDisabled(button: Button, disabled: boolean): void {
   button.disabled = disabled;
   button.el.classList.toggle("disabled", disabled);
   if (disabled) {
-    // Cleared, or the button keeps whatever inline colours it had when it
-    // went dim and the .disabled class loses to them.
+    // Cleared, or the button keeps the inline colours it had when it went
+    // dim and .disabled loses to them.
     button.el.style.backgroundColor = "";
     button.el.style.borderColor = "";
     button.el.style.color = "";
@@ -118,7 +131,7 @@ function renderButtons(now: number): void {
       return;
     }
     const presentation = buttonStrip.presentation(index, now);
-    button.el.style.backgroundColor = rgba(SURFACE_HOVER, presentation.heat);
+    button.el.style.backgroundColor = rgba(liveChannels.surfaceHover, presentation.heat);
     button.el.style.borderColor = rgba(BORDER_STRONG, presentation.heat);
     button.el.style.color = textAt(presentation.heat);
     button.el.style.transform = `scale(${presentation.scale})`;
@@ -132,7 +145,12 @@ function renderButtons(now: number): void {
 const windowButtons: { el: HTMLElement; destructive: boolean }[] = [];
 const windowStrip = new Strip(1, false);
 
-function windowButton(id: string, iconName: IconName, destructive: boolean): void {
+function windowButton(
+  id: string,
+  iconName: IconName,
+  destructive: boolean,
+  onActivate: () => void,
+): void {
   const node = byId(id);
   setIcon(node, iconName, 14);
 
@@ -147,14 +165,27 @@ function windowButton(id: string, iconName: IconName, destructive: boolean): voi
     windowStrip.hover(null);
     scheduleFrame();
   });
+  node.addEventListener("click", (event) => {
+    onActivate();
+    spawnRipple(node, event.clientX, event.clientY);
+  });
+  // A div standing in for a button has to answer the keyboard like one --
+  // same reasoning as navButton.
+  node.addEventListener("keydown", (event: Event) => {
+    const key = (event as KeyboardEvent).key;
+    if (key === "Enter" || key === " ") {
+      event.preventDefault();
+      node.click();
+    }
+  });
 }
 
 function renderWindowButtons(now: number): void {
   windowButtons.forEach((button, index) => {
     const presentation = windowStrip.presentation(index, now);
-    // Close tints towards a muted red rather than the usual purple: it is
-    // the one control in the window whose result cannot be undone.
-    const lit = button.destructive ? mixRgb(DANGER, BACKGROUND, 0.45) : SURFACE_HOVER;
+    // Close tints towards a muted red: it is the one control in the window
+    // whose result cannot be undone.
+    const lit = button.destructive ? mixRgb(DANGER, BACKGROUND, 0.45) : liveChannels.surfaceHover;
     button.el.style.backgroundColor = rgba(lit, presentation.heat);
     button.el.style.color = textAt(presentation.heat);
   });
@@ -168,32 +199,134 @@ const tabStrip = new Strip(1.02, false);
 let tabElements: HTMLElement[] = [];
 let activeIndex = -1;
 
-// Only settings has a page of its own right now; history and bookmarks both
-// resolve to the new tab page until they get one -- see contract.json's
-// internal_addresses and WegletWindow::ResolveForEngine, which are the
-// actual source of truth for what a tab's URL will be. A mark keyed on
-// "history.html" would never match, because that page does not exist.
-const SETTINGS_URL = pageUrl(pages.settings);
+// ---------------------------------------------------------------------
+// Tab drag-to-reorder
+// ---------------------------------------------------------------------
 
-function faviconFor(tab: TabState): HTMLElement {
-  // .loading drives the spinner in toolbar.css. The model has tracked
-  // this all along; it just had no way across the boundary until the tab
-  // state carried it.
+interface DragState {
+  readonly tabId: string;
+  readonly pointerId: number;
+  readonly startClientX: number;
+  readonly startIndex: number;
+  readonly pillWidth: number;
+  target: number;
+}
+
+let drag: DragState | null = null;
+// Set for exactly the click that follows a drag, so letting go of a
+// dragged tab does not also activate whatever slot it landed on.
+let suppressNextClick = false;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+// Slides every pill between the dragged tab's old slot and its target
+// out of the way by one pill's width, leaving a gap for it to drop into.
+function shiftSiblings(target: number): void {
+  if (!drag) {
+    return;
+  }
+  tabElements.forEach((pill, index) => {
+    if (index === drag!.startIndex) {
+      return;
+    }
+    pill.classList.add("drag-shifting");
+    let shift = 0;
+    if (drag!.startIndex < target && index > drag!.startIndex && index <= target) {
+      shift = -1;
+    } else if (drag!.startIndex > target && index < drag!.startIndex && index >= target) {
+      shift = 1;
+    }
+    pill.style.transform = shift ? `translateX(${shift * drag!.pillWidth}px)` : "";
+  });
+}
+
+function clearDragStyles(): void {
+  for (const pill of tabElements) {
+    pill.classList.remove("dragging", "drag-shifting");
+    pill.style.transform = "";
+  }
+}
+
+function moveDrag(event: PointerEvent): void {
+  if (!drag || event.pointerId !== drag.pointerId) {
+    return;
+  }
+  const pill = tabElements[drag.startIndex];
+  if (!pill) {
+    return;
+  }
+  const deltaX = event.clientX - drag.startClientX;
+  pill.style.transform = `translateX(${deltaX}px)`;
+
+  const target = clamp(
+    drag.startIndex + Math.round(deltaX / drag.pillWidth),
+    0,
+    tabElements.length - 1,
+  );
+  if (target !== drag.target) {
+    drag.target = target;
+    shiftSiblings(target);
+  }
+}
+
+function endDrag(event: PointerEvent): void {
+  if (!drag || event.pointerId !== drag.pointerId) {
+    return;
+  }
+  const { tabId, startIndex, target } = drag;
+  clearDragStyles();
+  drag = null;
+  suppressNextClick = true;
+  if (target !== startIndex) {
+    send("reorderTab", tabId, target);
+  }
+}
+
+// Keyed on the URL the address resolves to, from the contract, so a page
+// that moves does not silently stop being marked.
+const MARKED_PAGES: readonly (readonly [string, IconName])[] = [
+  [pageUrl(pages.settings), "settings"],
+  [pageUrl(pages.history), "history"],
+  [pageUrl(pages.bookmarks), "bookmark"],
+];
+
+function faviconFor(tab: TabState, faviconsEnabled: boolean): HTMLElement {
+  // .loading drives the spinner in toolbar.css.
   const slot = el("span", {
     className: tab.loading ? "tab-favicon loading" : "tab-favicon",
   });
-  // Weglet's own pages get their own mark. Everything else gets nothing yet:
-  // a favicon has to come from somewhere, and asking a third party for one
-  // tells them what the user has open -- see docs/security.md.
-  if (tab.url === SETTINGS_URL) {
+  // Weglet's own pages always get their own mark, favicons or not: an
+  // internal page has no real site to ask.
+  const marked = MARKED_PAGES.find(([url]) => url === tab.url);
+  if (marked) {
     const mark = el("span", { className: "tab-favicon-mark" });
-    setIcon(mark, "settings", 14);
+    setIcon(mark, marked[1], 14);
     slot.appendChild(mark);
+    return slot;
+  }
+  // Everything else gets nothing by default: a favicon has to come from
+  // somewhere, and asking tells them what the user has open. See
+  // docs/security.md and Settings' "Show site icons" toggle.
+  const src = faviconsEnabled ? faviconUrl(tab.url) : null;
+  if (src) {
+    const img = el("img", { className: "tab-favicon-mark" });
+    img.src = src;
+    img.alt = "";
+    img.referrerPolicy = "no-referrer";
+    img.addEventListener("error", () => img.remove(), { once: true });
+    slot.appendChild(img);
   }
   return slot;
 }
 
-function tabPill(tab: TabState, index: number, active: boolean): HTMLElement {
+function tabPill(
+  tab: TabState,
+  index: number,
+  active: boolean,
+  faviconsEnabled: boolean,
+): HTMLElement {
   const close = el("span", { className: "tab-close", text: "\u00d7" });
   close.setAttribute("aria-label", `Close ${tab.label}`);
   // pointerdown as well as click: pressing close must not also start
@@ -207,7 +340,7 @@ function tabPill(tab: TabState, index: number, active: boolean): HTMLElement {
   const pill = el("div", {
     className: active ? "tab-pill active" : "tab-pill",
     children: [
-      faviconFor(tab),
+      faviconFor(tab, faviconsEnabled),
       el("span", { className: "tab-title", text: tab.label }),
       close,
     ],
@@ -217,7 +350,13 @@ function tabPill(tab: TabState, index: number, active: boolean): HTMLElement {
   pill.tabIndex = 0;
   attachTooltip(pill, tab.url || tab.label);
 
-  pill.addEventListener("click", () => send("activateTab", tab.id));
+  pill.addEventListener("click", () => {
+    if (suppressNextClick) {
+      suppressNextClick = false;
+      return;
+    }
+    send("activateTab", tab.id);
+  });
   pill.addEventListener("keydown", (event: Event) => {
     const key = (event as KeyboardEvent).key;
     if (key === "Enter" || key === " ") {
@@ -233,14 +372,66 @@ function tabPill(tab: TabState, index: number, active: boolean): HTMLElement {
     tabStrip.hover(null);
     scheduleFrame();
   });
+
+  // A press only becomes a drag once it has moved a few pixels; short of
+  // that it's a click. setPointerCapture below routes pointermove/up here
+  // regardless of what's visually underneath.
+  pill.addEventListener("pointerdown", (event: PointerEvent) => {
+    if (event.button !== 0) {
+      return;
+    }
+    const pointerId = event.pointerId;
+    const startX = event.clientX;
+    let moved = false;
+
+    const onMove = (moveEvent: PointerEvent): void => {
+      if (moveEvent.pointerId !== pointerId) {
+        return;
+      }
+      if (!moved && Math.abs(moveEvent.clientX - startX) > 4) {
+        moved = true;
+        pill.setPointerCapture(pointerId);
+        pill.classList.add("dragging");
+        drag = {
+          tabId: tab.id,
+          pointerId,
+          startClientX: startX,
+          startIndex: index,
+          pillWidth: pill.getBoundingClientRect().width,
+          target: index,
+        };
+      }
+      if (moved) {
+        moveDrag(moveEvent);
+      }
+    };
+    const onUp = (upEvent: PointerEvent): void => {
+      if (upEvent.pointerId !== pointerId) {
+        return;
+      }
+      pill.removeEventListener("pointermove", onMove);
+      pill.removeEventListener("pointerup", onUp);
+      pill.removeEventListener("pointercancel", onUp);
+      if (moved) {
+        endDrag(upEvent);
+      }
+    };
+    pill.addEventListener("pointermove", onMove);
+    pill.addEventListener("pointerup", onUp);
+    pill.addEventListener("pointercancel", onUp);
+  });
   return pill;
 }
 
 function renderTabs(now: number): void {
   tabElements.forEach((pill, index) => {
+    // A dragged or shifted pill owns its own transform; the per-frame heat
+    // animation must not fight it for the same style property.
+    if (drag && (index === drag.startIndex || pill.classList.contains("drag-shifting"))) {
+      return;
+    }
     const presentation = tabStrip.presentation(index, now);
-    // A tab grows into place from just over half height rather than popping
-    // in at full size.
+    // A tab grows into place rather than popping in at full size.
     pill.style.height = `${tokens.layoutTabHeight * (0.55 + 0.45 * presentation.arrival)}px`;
     pill.style.transform = `scale(${presentation.scale})`;
 
@@ -267,39 +458,47 @@ function isEditingAddress(): boolean {
 }
 
 function render(state: BrowserState): void {
+  currentLanguage = state.language;
+  applyI18n(state.language);
+  applyAccent(state.accentColor);
+  applyAddressBarShape(state.addressBarShape);
+
   const strip = byId("tabstrip");
   const newTab = byId("new-tab");
 
-  // Rebuilt rather than diffed. The strip is at most a hundred pills of
-  // three nodes each, and the heat carried in the Strip survives a rebuild
-  // by index -- so hovering a tab while it repaints does not flicker.
-  for (const old of strip.querySelectorAll(".tab-pill")) {
-    old.remove();
+  // Rebuilt rather than diffed -- at most a hundred pills, and heat
+  // carried in the Strip survives a rebuild by index, so this doesn't
+  // flicker. Skipped mid-drag so a push doesn't yank the DOM out from
+  // under the pointer; the strip catches up once the drag ends.
+  if (!drag) {
+    for (const old of strip.querySelectorAll(".tab-pill")) {
+      old.remove();
+    }
+    tabElements = [];
+    activeIndex = state.tabs.findIndex((tab) => tab.id === state.activeId);
+
+    state.tabs.forEach((tab, index) => {
+      const pill = tabPill(tab, index, tab.id === state.activeId, state.faviconsEnabled);
+      strip.insertBefore(pill, newTab);
+      tabElements.push(pill);
+    });
   }
-  tabElements = [];
-  activeIndex = state.tabs.findIndex((tab) => tab.id === state.activeId);
 
-  state.tabs.forEach((tab, index) => {
-    const pill = tabPill(tab, index, tab.id === state.activeId);
-    strip.insertBefore(pill, newTab);
-    tabElements.push(pill);
-  });
-
-  const active = activeIndex >= 0 ? state.tabs[activeIndex] : undefined;
+  // Independent of the drag guard above: back/forward and the address bar
+  // track the active tab live regardless of whether the strip repainted.
+  const active = state.tabs.find((tab) => tab.id === state.activeId);
 
   const address = byId<HTMLInputElement>("address-bar");
   if (!isEditingAddress()) {
-    // Blank for the new tab page: showing its internal URL tells the user
-    // nothing and invites them to edit it.
+    // Blank for the new tab page: its internal URL tells the user nothing
+    // and invites editing.
     const url = active?.url ?? "";
     address.value = url.startsWith("chrome://weglet/") ? "" : url;
   }
 
-  // Ctrl+L. The keystroke reaches the browser process, which focuses this
-  // page and sets this for exactly one push -- focus lives in the DOM, so
-  // putting the caret here is the only part it cannot do itself.
-  //
-  // After the value above, so selecting selects what is actually shown.
+  // Ctrl+L. The browser focuses this page and sets this for exactly one
+  // push; putting the caret here is the part it cannot do itself. After
+  // the value above, so selecting selects what is shown.
   if (state.focusOmnibox) {
     address.focus();
     address.select();
@@ -307,41 +506,71 @@ function render(state: BrowserState): void {
 
   setDisabled(back, !active?.canGoBack);
   setDisabled(forward, !active?.canGoForward);
+  const bookmarkToggle = byId("bookmark-toggle");
+  bookmarkToggle.classList.toggle("bookmarked", state.bookmarked);
+  setIcon(bookmarkToggle, "bookmark", 18, state.bookmarked);
+
+  const siteInfo = byId("site-info");
+  const isInternal = (active?.url ?? "").startsWith("chrome://weglet/");
+  siteInfo.classList.toggle("protected", isInternal);
+  setIcon(siteInfo, isInternal ? "shield-check" : "settings", 18, isInternal);
 
   scheduleFrame();
 }
 
-const back = navButton("go-back", "arrow-left", "Back", () => send("goBack"));
-const forward = navButton("go-forward", "arrow-right", "Forward", () =>
+const back = navButton("go-back", "arrow-left", "toolbar.back", () => send("goBack"));
+const forward = navButton("go-forward", "arrow-right", "toolbar.forward", () =>
   send("goForward"),
 );
-navButton("reload", "refresh", "Reload", () => send("reload"));
-navButton("bookmark-toggle", "bookmark", "Bookmark this page", () => {
-  // Bookmarks live in the profile, and the page that manages them is still
-  // to come. Wired up but inert rather than absent, so the toolbar's shape
-  // does not change when it starts working.
+navButton("reload", "refresh", "toolbar.reload", () => send("reload"));
+navButton(
+  "bookmark-toggle",
+  "bookmark",
+  "toolbar.bookmark",
+  () => send("toggleBookmark"),
+  undefined,
+  false,
+);
+navButton("site-info", "settings", "toolbar.siteInfo", () => {
+  // Sent as the button's own on-screen rect: the popup is a separate
+  // floating widget -- see WegletSiteInfoPopup.
+  const rect = byId("site-info").getBoundingClientRect();
+  send("toggleSiteInfo", Math.round(rect.right), Math.round(rect.bottom));
 });
-navButton("copy-url", "link", "Copy address", () => {
+navButton("copy-url", "link", "toolbar.copyUrl", () => {
   const url = byId<HTMLInputElement>("address-bar").value;
   if (url) {
     void navigator.clipboard.writeText(url);
   }
 });
-navButton("downloads-button", "download", "Downloads", () => {});
-navButton("open-settings", "settings", "Settings", () => send("openSettings"));
+navButton("keep", "plus", "toolbar.keep", () => {
+  // Sent as the button's own on-screen rect: the popup is a separate
+  // floating widget, and the browser has no other way to know where
+  // this page's DOM put it.
+  const rect = byId("keep").getBoundingClientRect();
+  send("openSaveShortcutPopup", Math.round(rect.right), Math.round(rect.bottom));
+});
+navButton(
+  "downloads-button",
+  "download",
+  "toolbar.downloads",
+  () => {},
+  byId("downloads-icon-slot"),
+);
+navButton("open-settings", "dots-vertical", "toolbar.settingsHistory", () => send("toggleMenu"));
 
 function main(): void {
   const newTab = byId("new-tab");
   setIcon(newTab, "plus");
-  attachTooltip(newTab, "New tab");
+  attachTooltip(newTab, () => t("toolbar.newTab", currentLanguage));
   newTab.addEventListener("click", (event) => {
     send("newTab");
     spawnRipple(newTab, event.clientX, event.clientY);
   });
 
-  windowButton("win-minimize", "minus", false);
-  windowButton("win-maximize", "square", false);
-  windowButton("win-close", "x", true);
+  windowButton("win-minimize", "minus", false, () => send("minimizeWindow"));
+  windowButton("win-maximize", "square", false, () => send("toggleMaximizeWindow"));
+  windowButton("win-close", "x", true, () => send("closeWindow"));
 
   const address = byId<HTMLInputElement>("address-bar");
   address.addEventListener("keydown", (event: Event) => {
@@ -350,9 +579,9 @@ function main(): void {
       const text = address.value.trim();
       if (text) {
         send("navigate", text);
-        // Focus moves to the page. Leaving it here sends the next keystroke
-        // to the wrong place and also stops render from ever updating the
-        // field again.
+        // Focus moves to the page. Leaving it here sends the next
+        // keystroke to the wrong place and stops render updating the
+        // field.
         address.blur();
       }
     } else if (key === "Escape") {

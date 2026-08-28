@@ -1,6 +1,6 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// weglet/browser/weglet_content_browser_client.h
+// ContentBrowserClient: policy answers and the navigation throttle.
 
 #ifndef WEGLET_BROWSER_WEGLET_CONTENT_BROWSER_CLIENT_H_
 #define WEGLET_BROWSER_WEGLET_CONTENT_BROWSER_CLIENT_H_
@@ -9,16 +9,15 @@
 #include <string>
 
 #include "base/memory/raw_ptr.h"
+#include "components/spellcheck/common/spellcheck.mojom-forward.h"
 #include "content/public/browser/content_browser_client.h"
+#include "mojo/public/cpp/bindings/pending_receiver.h"
 
 namespace weglet {
 
 class WegletBrowserMainParts;
 
-// Where the browser process answers the content layer's questions about
-// policy. Phase 4's request blocker hooks in here, through
-// CreateURLLoaderThrottles -- an official extension point, so no patch to
-// the Chromium tree is needed for it.
+// Where the browser process answers content's questions about policy.
 class WegletContentBrowserClient : public content::ContentBrowserClient {
  public:
   WegletContentBrowserClient();
@@ -36,18 +35,30 @@ class WegletContentBrowserClient : public content::ContentBrowserClient {
   blink::UserAgentMetadata GetUserAgentMetadata() override;
   std::string GetProduct() override;
 
-  // Where the block list and the risk heuristics actually take effect --
-  // content's own hook, so no patch to the Chromium tree. This is the one
-  // point that sees a redirect, which is exactly the case a shortened
-  // link resolving to a lookalike arrives as.
+  // Where the block list and the risk heuristics take effect. The one
+  // point that sees a redirect, which is how a shortened link resolving
+  // to a lookalike arrives.
   void CreateThrottlesForNavigation(
       content::NavigationThrottleRegistry& registry) override;
 
-  // Weglet's pages are chrome://weglet/, served by a WebUIDataSource -- see
-  // weglet_web_ui_data_source.h -- so there is no scheme of our own to
-  // register a loader factory for.
+  // Serves the DevTools front-end's own resources -- see
+  // WegletDevToolsManagerDelegate.
+  std::unique_ptr<content::DevToolsManagerDelegate>
+  CreateDevToolsManagerDelegate() override;
+
+  // Binds spellcheck::mojom::SpellCheckHost -- see WegletSpellCheckHost.
+  void RegisterBrowserInterfaceBindersForFrame(
+      content::RenderFrameHost* render_frame_host,
+      mojo::BinderMapWithContext<content::RenderFrameHost*>* map) override;
+
+  // No scheme of our own to register a loader factory for: our pages
+  // are chrome://weglet/, served by a WebUIDataSource.
 
  private:
+  void BindSpellCheckHost(
+      content::RenderFrameHost* frame_host,
+      mojo::PendingReceiver<spellcheck::mojom::SpellCheckHost> receiver);
+
   // Owned by the content layer, which outlives this client.
   raw_ptr<WegletBrowserMainParts> browser_main_parts_ = nullptr;
 };

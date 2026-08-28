@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<!-- Copyright 2026 Weglet - Licensed under Apache 2.0 -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Save shortcut</title>
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="base.css" />
+    <link rel="stylesheet" href="save_shortcut.css" />
+  </head>
+  <body>
+    <form id="form">
+      <div class="row">
+        <div class="favicon" id="favicon" aria-hidden="true"></div>
+        <div class="titles">
+          <div class="title" data-i18n="saveShortcut.title">Save shortcut</div>
+          <div class="domain" id="domain"></div>
+        </div>
+      </div>
+      <input
+        class="name-input"
+        id="name-input"
+        type="text"
+        autocomplete="off"
+        spellcheck="false"
+        aria-label="Shortcut name"
+      />
+      <div class="actions">
+        <button type="button" class="cancel-btn" id="cancel-btn" data-i18n="saveShortcut.cancel">Cancel</button>
+        <button type="submit" class="save-btn" id="save-btn" data-i18n="saveShortcut.save">Save</button>
+      </div>
+    </form>
+    <script type="module" src="save_shortcut.js"></script>
+  </body>
+</html>

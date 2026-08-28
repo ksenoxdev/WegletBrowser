@@ -1,21 +1,15 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// rust/weglet-core/src/history.rs
-
-// Back/forward history for one tab.
-//
-// The cursor is the single source of truth for "where is this tab". The
-// tab does not keep its own copy of the URL -- two copies of that fact
-// drift apart, and when they do the address bar shows one page while
-// another is loaded.
+// Back/forward history for one tab. The cursor is the only record of
+// where the tab is; the tab keeps no second copy of the URL.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct History {
     entries: Vec<String>,
     cursor: usize,
 }
 
-// Bounded on purpose. Every entry is a URL held in memory for the life of
-// the tab, and a page can push history entries in a loop.
+// Bounded: every entry is a URL held for the life of the tab, and a page
+// can push entries in a loop.
 const MAX_ENTRIES: usize = 256;
 
 impl History {
@@ -26,9 +20,8 @@ impl History {
         }
     }
 
-    // Rebuilds from a restored session. The cursor is clamped rather than
-    // trusted: session.toml is a file on disk that anything could have
-    // written, and an out-of-range cursor would panic on first read.
+    // Rebuilds from a restored session. The cursor is clamped, not
+    // trusted: it comes off disk, and out of range would panic.
     pub fn from_entries(entries: Vec<String>, cursor: usize) -> Self {
         let mut history = Self {
             entries,
@@ -43,8 +36,7 @@ impl History {
     }
 
     pub fn current(&self) -> &str {
-        // Every path that touches entries keeps at least one, so this
-        // cannot be out of range.
+        // Every path that touches entries keeps at least one.
         &self.entries[self.cursor]
     }
 
@@ -64,9 +56,7 @@ impl History {
         self.cursor + 1 < self.entries.len()
     }
 
-    // A new navigation. Anything ahead of the cursor is dropped, which is
-    // what every browser does: going back and then somewhere new means
-    // the forward branch is gone.
+    // A new navigation drops anything ahead of the cursor.
     pub fn navigate(&mut self, url: String) {
         if self.entries[self.cursor] == url {
             return;
@@ -77,8 +67,8 @@ impl History {
         self.cursor = self.entries.len() - 1;
     }
 
-    // Same page, new URL -- a redirect, or history.replaceState. Does not
-    // add an entry, so Back still goes where the user expects.
+    // Same page, new URL: a redirect or history.replaceState. Adds no
+    // entry.
     pub fn replace_current(&mut self, url: String) {
         self.entries[self.cursor] = url;
     }
@@ -159,8 +149,8 @@ mod tests {
         assert_eq!(history.entries().len(), 1);
     }
 
-    // A redirect must not add an entry, or Back lands the user right back
-    // on the page that redirected them.
+    // A redirect must not add an entry, or Back lands on the page that
+    // redirected.
     #[test]
     fn replacing_the_current_entry_does_not_grow_the_history() {
         let mut history = History::new("https://a.example".into());

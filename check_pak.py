@@ -1,23 +1,14 @@
 #!/usr/bin/env python3
 # Copyright 2026 Weglet - Licensed under Apache 2.0
 #
-# weglet/check_pak.py
-#
 # Compares weglet_pak against content/shell's own repack target.
 #
 # weglet/BUILD.gn carries a hand-written list of Chromium's resource packs,
-# trimmed from content/shell's. That list is the one real coupling to the
-# inside of the tree: a pack added to content/shell is usually one the
+# trimmed from content/shell's. A pack added there is usually one the
 # content layer now expects every embedder to have, and the way you find
-# out you missed it is a CHECK on the first string or image ResourceBundle
-# is asked for -- at startup, with nothing on screen to say why.
-#
-# It had already drifted. views_resources_100_percent.pak was missing while
-# the window was a views::Widget on every desktop platform.
-#
-# So the list is still hand-maintained -- it has to be, since most of the
-# difference is deliberate -- but the differences are declared here, and a
-# new one fails the build with the name of the pack in the message.
+# out you missed it is a CHECK at startup with nothing on screen. Most of
+# the difference is deliberate, so the differences are declared below and a
+# new one fails the build with the pack's name.
 
 import argparse
 import os
@@ -25,9 +16,8 @@ import re
 import sys
 
 # Packs content/shell has that Weglet deliberately does not, and why. A
-# pack in content/shell that is not here and not in weglet/BUILD.gn is a
-# build failure: either it belongs to Weglet too, or the reason it does
-# not belongs in this table.
+# pack in content/shell that is in neither this table nor weglet/BUILD.gn
+# is a build failure.
 def load_exclusions(path: str) -> dict:
     """Packs Weglet deliberately does not have, and why.
 
@@ -69,8 +59,7 @@ def main() -> int:
     parser.add_argument(
         "--exclusions", required=True, help="weglet/pak_exclusions.txt"
     )
-    # Written only so GN has an output to depend on; the content is a
-    # record of what was compared.
+    # Written only so GN has an output to depend on.
     parser.add_argument("--stamp")
     args = parser.parse_args()
 
@@ -101,8 +90,7 @@ def main() -> int:
         sys.stderr.write("\n".join(lines))
         return 1
 
-    # Not fatal: content/shell dropping a pack we still list is worth
-    # knowing about, but our list is allowed to be a superset.
+    # Not fatal: our list is allowed to be a superset.
     extra = sorted(ours - theirs)
     if extra:
         sys.stderr.write(

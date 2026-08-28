@@ -1,6 +1,6 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// weglet/browser/weglet_web_ui_controller_factory.cc
+// The privilege boundary: which URLs get WebUI bindings.
 
 #include "weglet/browser/weglet_web_ui_controller_factory.h"
 
@@ -19,9 +19,7 @@
 namespace weglet {
 namespace {
 
-// True only for chrome://weglet/... -- an exact scheme and an exact host.
-//
-// SchemeIs and host() rather than a prefix test on the spec: a prefix
+// True only for chrome://weglet/... -- exact scheme, exact host. A prefix
 // test would accept "chrome://weglet.evil.example/" and hand it a channel
 // into the browser.
 bool IsWegletPage(const GURL& url) {
@@ -29,12 +27,9 @@ bool IsWegletPage(const GURL& url) {
          url.host() == kHost;
 }
 
-// Which of our pages this URL is. Worked out once, here, and carried by
-// the controller from then on -- the browser used to re-derive it by
-// string-comparing the committed path on every push to every page.
+// Which of our pages this URL is. Worked out once and carried by the
+// controller from then on.
 contract::PageKind KindOf(const GURL& url) {
-  // path() returns a string_view; kept as one rather than copied into a
-  // std::string that would only be sliced again.
   const std::string_view path = url.path();
   // path() carries the leading slash; the generated paths do not. An
   // empty path is the page the data source serves by default.
@@ -43,12 +38,8 @@ contract::PageKind KindOf(const GURL& url) {
   return contract::KindForPath(relative);
 }
 
-// Gives a Weglet page its message channel. One controller per page; the
-// handler is what the page's chrome.send() reaches.
-//
-// It is also what registers the page with the state service, and what
-// unregisters it again -- the controller's lifetime is the page's, which
-// is exactly the window in which pushing to it is meaningful.
+// Gives a Weglet page its message channel, and registers the page with the
+// state service for as long as the controller lives.
 class WegletWebUIController : public content::WebUIController {
  public:
   WegletWebUIController(content::WebUI* web_ui,
@@ -56,14 +47,11 @@ class WegletWebUIController : public content::WebUIController {
                         WegletStateService* state,
                         contract::PageKind kind)
       : content::WebUIController(web_ui), state_(state), web_ui_(web_ui) {
-    // No service means no profile behind this page, which should not
-    // happen -- but a page with no handler is a page whose buttons do
-    // nothing, and a page whose chrome.send() is unregistered crashes the
-    // browser. So the handler is added either way; it drops what it
-    // cannot do.
+    // No service means no profile behind this page. The handler is added
+    // either way -- an unregistered chrome.send() crashes the browser --
+    // and drops what it cannot do.
     if (state_) {
-      // The toolbar shows one window's tabs; which one is decided here,
-      // once, from the window the page lives in.
+      // Which window's tabs the toolbar shows is decided here, once.
       state_->AddPage(web_ui, kind, window ? window->window_id() : 0);
     }
     web_ui->AddMessageHandler(std::make_unique<WegletMessageHandler>(
@@ -88,10 +76,9 @@ class WegletWebUIController : public content::WebUIController {
 
 // static
 void WegletWebUIControllerFactory::Register() {
-  // NoDestructor: content holds this pointer for the life of the process, so
-  // it must outlive everything and must not be torn down at exit. It
-  // constructs in place, so it needs the default constructor rather than a
-  // unique_ptr, and it needs to be a friend to reach it.
+  // NoDestructor: content holds this pointer for the life of the process.
+  // It constructs in place, so it needs the default constructor and
+  // friendship to reach it.
   static base::NoDestructor<WegletWebUIControllerFactory> factory;
   static bool registered = false;
   if (!registered) {
@@ -107,10 +94,8 @@ WegletWebUIControllerFactory::CreateWebUIControllerForURL(
   if (!IsWegletPage(url)) {
     return nullptr;
   }
-  // The window this page belongs to, if it belongs to one. Looked up from
-  // the WebContents rather than remembered here: a factory outlives every
-  // window, so it must not hold one. Null for a page open outside a
-  // window; the handler drops the messages that need one.
+  // Looked up from the WebContents, not held: a factory outlives every
+  // window. Null for a page open outside one.
   content::WebContents* contents = web_ui->GetWebContents();
   WegletWindow* window = WegletWindow::FromWebContents(contents);
   WegletStateService* state =
@@ -124,11 +109,9 @@ WegletWebUIControllerFactory::CreateWebUIControllerForURL(
 content::WebUI::TypeID WegletWebUIControllerFactory::GetWebUIType(
     content::BrowserContext* browser_context,
     const GURL& url) {
-  // Any non-null value distinguishes "a WebUI of this type" from "not a
-  // WebUI"; content compares these for identity, so the address of a static
-  // is exactly what is wanted. All Weglet pages share one type: they share
-  // one origin and one set of bindings, and content uses the type to decide
-  // whether two pages may share a process.
+  // Any non-null value distinguishes a WebUI of this type from not a
+  // WebUI; content compares these for identity. All Weglet pages share
+  // one type, one origin and one set of bindings.
   static const int kWegletWebUIType = 0;
   return IsWegletPage(url) ? &kWegletWebUIType : content::WebUI::kNoWebUI;
 }

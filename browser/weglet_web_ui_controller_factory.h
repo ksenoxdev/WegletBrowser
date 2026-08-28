@@ -1,6 +1,6 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// weglet/browser/weglet_web_ui_controller_factory.h
+// The privilege boundary: which URLs get WebUI bindings.
 
 #ifndef WEGLET_BROWSER_WEGLET_WEB_UI_CONTROLLER_FACTORY_H_
 #define WEGLET_BROWSER_WEGLET_WEB_UI_CONTROLLER_FACTORY_H_
@@ -13,16 +13,11 @@
 
 namespace weglet {
 
-// Decides which URLs are Weglet pages.
+// Decides which URLs are Weglet pages, which decides whether a frame gets
+// the bindings that make chrome.send() exist. The test is an exact host
+// match on content's own scheme and nothing else.
 //
-// This is where the privilege boundary is drawn. Content asks this factory
-// about every navigation; the answer decides whether the frame gets the
-// bindings that make chrome.send() exist. Say yes to the wrong URL and
-// arbitrary content gets a channel into the browser, so the test is an
-// exact host match on our own scheme and nothing else.
-//
-// Registered once at startup and never destroyed -- content keeps the
-// pointer for the life of the process.
+// Registered once at startup and never destroyed.
 class WegletWebUIControllerFactory : public content::WebUIControllerFactory {
  public:
   // Registers the single instance with content. Idempotent.
@@ -42,9 +37,8 @@ class WegletWebUIControllerFactory : public content::WebUIControllerFactory {
                       const GURL& url) override;
 
  private:
-  // Constructed and held by a NoDestructor in Register(), which needs access
-  // to both. Private so nobody else can make a second one: content compares
-  // factories by identity.
+  // Held by a NoDestructor in Register(). Private so nobody makes a
+  // second one: content compares factories by identity.
   friend class base::NoDestructor<WegletWebUIControllerFactory>;
 
   WegletWebUIControllerFactory() = default;

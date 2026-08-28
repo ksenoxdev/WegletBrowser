@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<!-- Copyright 2026 Weglet - Licensed under Apache 2.0
+
+     A flat, newest-first list of saved pages. Structure only; the list is
+     filled in and wired up by bookmarks.ts. There is no bookmark store
+     behind it yet, so the list is always empty for now -- see
+     WegletStateService::BuildFor.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Bookmarks</title>
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="base.css" />
+    <link rel="stylesheet" href="bookmarks.css" />
+  </head>
+  <body>
+    <div class="page">
+      <div class="header">
+        <h1 data-i18n="bookmarks.title">Bookmarks</h1>
+        <button class="done" id="done" data-i18n="bookmarks.done">Done</button>
+      </div>
+
+      <div class="panel">
+        <div id="bookmarks-list"></div>
+      </div>
+    </div>
+    <script type="module" src="bookmarks.js"></script>
+  </body>
+</html>

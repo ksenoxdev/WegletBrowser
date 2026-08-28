@@ -1,6 +1,6 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// weglet/app/weglet_main_delegate.h
+// ContentMainDelegate: process-wide setup and the client objects.
 
 #ifndef WEGLET_APP_WEGLET_MAIN_DELEGATE_H_
 #define WEGLET_APP_WEGLET_MAIN_DELEGATE_H_
@@ -16,9 +16,7 @@ class WegletContentBrowserClient;
 class WegletContentClient;
 class WegletContentRendererClient;
 
-// The one object the content layer calls back into before it knows
-// anything about Weglet. It runs in every process type, so anything set
-// up here has to be safe in a sandboxed renderer too.
+// content's entry point into Weglet. Runs in every process type.
 class WegletMainDelegate : public content::ContentMainDelegate {
  public:
   WegletMainDelegate();
@@ -34,12 +32,9 @@ class WegletMainDelegate : public content::ContentMainDelegate {
   content::ContentRendererClient* CreateContentRendererClient() override;
 
  private:
-  // Loads weglet.pak. Called once per process, before the sandbox
-  // closes -- a sandboxed renderer cannot open the file itself.
+  // Loads weglet.pak before the sandbox closes.
   static void InitializeResourceBundle();
 
-  // Created in every process type: the renderer needs it to reach the
-  // resource pack just as much as the browser does.
   std::unique_ptr<WegletContentClient> content_client_;
   std::unique_ptr<WegletContentBrowserClient> browser_client_;
   std::unique_ptr<WegletContentRendererClient> renderer_client_;

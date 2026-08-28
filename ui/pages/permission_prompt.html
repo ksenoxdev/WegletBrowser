@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<!-- Copyright 2026 Weglet - Licensed under Apache 2.0
+
+     The camera/mic/location/notifications popup -- its own floating
+     widget, not DOM inside the tab that asked: see WegletPermissionPrompt.
+     Structure only; filled in and wired by permission_prompt.ts.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Permission</title>
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="base.css" />
+    <link rel="stylesheet" href="permission_prompt.css" />
+  </head>
+  <body>
+    <div class="origin" id="origin"></div>
+    <div class="message" data-i18n="permissionPrompt.wants">wants to:</div>
+    <ul class="types" id="types"></ul>
+    <div class="actions">
+      <button id="block" class="btn" data-i18n="permissionPrompt.block">Block</button>
+      <button id="allow" class="btn btn-primary" data-i18n="permissionPrompt.allow">Allow</button>
+    </div>
+    <script type="module" src="permission_prompt.js"></script>
+  </body>
+</html>

@@ -1,0 +1,130 @@
+# Copyright 2026 Weglet - Licensed under Apache 2.0
+#
+# A translation of en.txt, not a second template: see en.txt's header
+# for the format and for what happens to a key missing here.
+
+settings.title=Настройки
+settings.done=Готово
+settings.tab.search=Поиск
+settings.tab.general=Общие
+settings.tab.security=Безопасность
+settings.tab.appearance=Внешний вид
+settings.search.engineHeading=Поисковая система
+settings.search.engineHint=Используется, если введён не адрес.
+settings.general.restoreHeading=Открывать вкладки заново
+settings.general.restoreHint=Восстанавливает вкладки, открытые при последнем закрытии браузера.
+settings.general.dataHeading=Данные браузера
+settings.general.dataHint=Удаляет куки, кэш и хранилище сайтов для всех сайтов. Не затрагивает сохранённые ярлыки и настройки.
+settings.general.clearData=Очистить данные браузера
+settings.general.confirmAgain=Нажмите ещё раз для подтверждения
+settings.general.faviconsHeading=Показывать значки сайтов
+settings.general.faviconsHint=Показывает настоящий значок сайта во вкладках, в доке новой вкладки и в закладках вместо буквы. По умолчанию выключено: загрузка значка — это уже запрос к этому сайту.
+settings.general.faviconsWarningTitle=Показывать значки сайтов?
+settings.general.faviconsWarningBody=Weglet начнёт запрашивать значок у каждого открытого или закреплённого сайта. Этот запрос сообщает сайту, что вы там, ещё до того как вы что-то введёте или нажмёте.
+settings.general.faviconsWarningCancel=Отмена
+settings.general.faviconsWarningEnable=Включить
+settings.security.phishingHeading=Защита от фишинга
+settings.security.phishingHint=Проверяет сайты по общественному списку известных фишинговых адресов.
+settings.security.phishingHintNotUpdated=Ещё не обновлялось.
+settings.security.phishingHintUpdated=Обновлено {when}.
+settings.security.phishingHintFailed=Последнее обновление не удалось; показан список от {when}.
+settings.security.refresh=Обновить сейчас
+settings.security.refreshing=Обновление…
+settings.security.blockedHeading=Заблокированные сайты
+settings.security.blockedHint=Заблокированные сайты не будут открываться на этом устройстве.
+settings.security.blockedPlaceholder=example.com
+settings.security.blockBtn=Заблокировать
+settings.appearance.colorHeading=Акцентный цвет
+settings.appearance.colorHint=Применяется везде — в панели инструментов, кнопках и ссылках по всему Weglet.
+settings.appearance.reset=Сбросить по умолчанию
+settings.appearance.shapeHeading=Форма адресной строки
+settings.appearance.shapePill=Таблетка
+settings.appearance.shapeRounded=Скруглённая
+settings.appearance.shapeSquare=Прямая
+settings.appearance.languageHeading=Язык
+
+toolbar.back=Назад · Alt+←
+toolbar.forward=Вперёд · Alt+→
+toolbar.reload=Обновить · Ctrl+R
+toolbar.keep=Сохранить страницу · Ctrl+D
+toolbar.bookmark=Добавить в закладки
+toolbar.copyUrl=Копировать адрес
+toolbar.siteInfo=Информация о сайте и разрешения
+toolbar.settingsHistory=Настройки и история
+toolbar.downloads=Загрузки
+toolbar.newTab=Новая вкладка · Ctrl+T
+toolbar.minimize=Свернуть
+toolbar.maximize=Развернуть
+toolbar.close=Закрыть
+toolbar.addressPlaceholder=Поиск или адрес
+
+menu.settings=Настройки
+menu.history=История
+menu.viewBookmarks=Показать закладки
+
+contextMenu.back=Назад
+contextMenu.forward=Вперёд
+contextMenu.reload=Обновить
+contextMenu.savePage=Сохранить страницу как…
+contextMenu.viewSource=Просмотр кода страницы
+contextMenu.openLinkNewTab=Открыть ссылку в новой вкладке
+contextMenu.copyLinkAddress=Копировать адрес ссылки
+contextMenu.cut=Вырезать
+contextMenu.copy=Копировать
+contextMenu.paste=Вставить
+contextMenu.selectAll=Выделить всё
+contextMenu.inspect=Просмотреть код
+
+findBar.placeholder=Поиск на странице
+findBar.previous=Предыдущее совпадение
+findBar.next=Следующее совпадение
+findBar.close=Закрыть
+
+permissionPrompt.wants=хочет:
+permissionPrompt.allow=Разрешить
+permissionPrompt.block=Блокировать
+permissionPrompt.camera=Использовать камеру
+permissionPrompt.microphone=Использовать микрофон
+permissionPrompt.location=Знать ваше местоположение
+permissionPrompt.notifications=Показывать уведомления
+
+siteInfo.internalTitle=Это страница Weglet
+siteInfo.internalBody=Она часть браузера и не нуждается в разрешениях.
+siteInfo.camera=Камера
+siteInfo.microphone=Микрофон
+siteInfo.location=Местоположение
+siteInfo.notifications=Уведомления
+
+history.title=История
+history.done=Готово
+history.searchTab=История поиска
+history.downloadsTab=Загрузки
+history.noSearchHistory=История поиска пуста.
+history.noDownloads=Загрузок пока нет.
+history.clearSearchHistory=Очистить историю поиска
+history.clearDownloads=Очистить загрузки
+
+bookmarks.title=Закладки
+bookmarks.done=Готово
+bookmarks.empty=Закладок пока нет.
+bookmarks.remove=Удалить закладку
+
+newtab.searchPlaceholder=Поиск или адрес
+newtab.searchingWith=Поиск через
+newtab.contextEdit=Изменить
+newtab.contextDelete=Удалить
+newtab.addShortcutTitle=Добавить ярлык
+newtab.editShortcutTitle=Изменить ярлык
+newtab.nameLabel=Название
+newtab.namePlaceholder=Мой сайт
+newtab.linkLabel=Ссылка
+newtab.cancel=Отмена
+newtab.add=Добавить
+newtab.save=Сохранить
+
+security.goBack=Назад
+security.proceedAnyway=Всё равно перейти
+
+saveShortcut.title=Сохранить ярлык
+saveShortcut.cancel=Отмена
+saveShortcut.save=Сохранить

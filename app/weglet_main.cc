@@ -1,10 +1,7 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// weglet/app/weglet_main.cc
-//
-// Process entry point. Every Weglet process -- browser, renderer, GPU,
-// utility -- starts here; content::ContentMain reads the command line to
-// work out which one it is and dispatches accordingly.
+// Process entry point for every process type; content::ContentMain
+// dispatches on the command line.
 
 #include "weglet/app/weglet_main_delegate.h"
 
@@ -18,8 +15,7 @@
 #include "sandbox/win/src/sandbox_types.h"
 
 int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int) {
-  // Populated by InitializeSandboxInfo and handed to every child
-  // process; without it the renderer starts unsandboxed.
+  // Without this the renderer starts unsandboxed.
   sandbox::SandboxInterfaceInfo sandbox_info = {nullptr};
   content::InitializeSandboxInfo(&sandbox_info);
 
@@ -28,8 +24,6 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int) {
   params.instance = instance;
   params.sandbox_info = &sandbox_info;
 
-  // Windows kills the process on some heap corruption instead of
-  // letting it limp on with a corrupted allocator.
   base::win::EnableHighDPISupport();
 
   return content::ContentMain(std::move(params));

@@ -1,10 +1,7 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// crates/weglet-security/tests/corpus.rs
-//
-// Measures assess_navigation against a fixed set of real addresses, so
-// a change to the heuristics has a number attached instead of an
-// opinion. See corpus.txt for what belongs in it.
+// Measures assess_navigation against a fixed set of real addresses, so a
+// change to the heuristics has a number attached. See corpus.txt.
 
 use weglet_security::{assess_navigation, RiskLevel};
 
@@ -52,9 +49,8 @@ fn entries() -> Vec<(Expect, String)> {
         .collect()
 }
 
-// The budget is zero. A legitimate address that gets flagged is worse
-// than a phishing address that does not: the first teaches people to
-// click through warnings, which disarms the second.
+// The budget is zero. A legitimate address that gets flagged teaches
+// people to click through warnings, which disarms the rest.
 #[test]
 fn no_false_positives_on_legitimate_addresses() {
     let mut failures = Vec::new();
@@ -80,14 +76,11 @@ fn no_false_positives_on_legitimate_addresses() {
 }
 
 // Missing a phishing address is a quality bug, not a hole: nothing else
-// in the browser trusts this verdict. Reported as a rate so it can be
-// watched rather than argued about.
+// trusts this verdict. Reported as a rate so it can be watched.
 #[test]
 fn false_negative_rate_stays_within_budget() {
-    // Zero today. Raising it is a decision, not a workaround: whatever
-    // number is here is what the project has agreed to let through.
-    // Written as a signed value because `usize <= 0` is a comparison
-    // clippy rightly refuses to let anyone write by accident.
+    // Zero today. Raising it is a decision, not a workaround. Signed
+    // because `usize <= 0` is a comparison clippy refuses.
     const MAX_MISSED: i64 = 0;
 
     let mut missed = Vec::new();
@@ -114,9 +107,8 @@ fn false_negative_rate_stays_within_budget() {
     );
 }
 
-// Severity is its own decision. Downgrading a block to a warning is a
-// judgement call worth making deliberately; doing it by accident while
-// changing something else is not.
+// Severity is its own decision: downgrading a block to a warning should
+// be deliberate.
 #[test]
 fn severity_matches_the_corpus() {
     let mut wrong = Vec::new();

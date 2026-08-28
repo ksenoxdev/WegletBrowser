@@ -1,6 +1,6 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// weglet/browser/weglet_security_guard.cc
+// Decides whether a navigation may proceed, and remembers why it did not.
 
 #include "weglet/browser/weglet_security_guard.h"
 
@@ -43,15 +43,14 @@ WegletSecurityGuard::~WegletSecurityGuard() = default;
 std::optional<WegletSecurityGuard::Notice> WegletSecurityGuard::Check(
     content::WebContents* contents,
     const GURL& url) {
-  // Our own pages, and anything with no host to judge. A page of ours must
-  // never be stoppable by an entry in a list the user typed, or opening
-  // settings to remove a mistaken block would be blocked by the mistake.
+  // Our own pages, and anything with no host to judge. Blocking one would
+  // mean a mistaken block could not be removed from settings.
   if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS()) {
     return std::nullopt;
   }
 
-  // A one-shot allowance, consumed whether or not it matches -- it was
-  // granted for one navigation, and the navigation happened.
+  // Consumed whether or not it matches: it was granted for one
+  // navigation, and the navigation happened.
   if (contents) {
     auto allowed = allowed_once_.find(contents);
     if (allowed != allowed_once_.end()) {
@@ -63,11 +62,13 @@ std::optional<WegletSecurityGuard::Notice> WegletSecurityGuard::Check(
     }
   }
 
-  // The user's own list first: it is the one they can point at and
-  // explain, it is not a heuristic, and it costs a hash lookup. Not
-  // dismissible -- the user asked for this, and offering to override it
-  // here would make the setting advice rather than a setting.
+  // Priority order: the user's own list (not a heuristic, not
+  // dismissible), then the threat feed (community-confirmed, not a
+  // guess), then the heuristics in AssessNavigation.
   WegletBridge::RiskAssessment assessment = bridge_->CheckBlockList(url);
+  if (assessment.level == WegletBridge::Risk::kNone) {
+    assessment = bridge_->CheckThreatFeed(url);
+  }
   if (assessment.level == WegletBridge::Risk::kNone) {
     assessment = bridge_->AssessNavigation(url);
   }
@@ -75,8 +76,7 @@ std::optional<WegletSecurityGuard::Notice> WegletSecurityGuard::Check(
     return std::nullopt;
   }
 
-  // No wording here. Every word the notice shows comes from the model,
-  // which is where the heuristics' own titles and reasons already lived.
+  // No wording here: every word the notice shows comes from the model.
   Notice notice;
   notice.target = url;
   notice.title = std::move(assessment.title);

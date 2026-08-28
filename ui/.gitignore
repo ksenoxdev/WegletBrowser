@@ -2,5 +2,6 @@
 # next to the sources so an import resolves during compilation.
 src/tokens.ts
 src/contract.ts
+src/generated_i18n.ts
 pages/tokens.css
 __pycache__/

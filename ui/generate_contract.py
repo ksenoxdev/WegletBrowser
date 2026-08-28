@@ -1,23 +1,10 @@
 #!/usr/bin/env python3
 # Copyright 2026 Weglet - Licensed under Apache 2.0
 #
-# weglet/ui/generate_contract.py
+# contract.json -> a TypeScript module for the pages, a C++ header for the
+# browser, and the internal addresses for weglet-core.
 #
-# Turns contract.json into the forms the boundary needs: a TypeScript
-# module for the pages, a C++ header for the browser, and the internal
-# addresses for weglet-core.
-#
-# Run by the build, never by hand -- the TypeScript and C++ outputs are
-# build output and are not checked in, so they cannot drift from the
-# source. generated_addresses.rs is the exception: it is checked in so
-# weglet-core builds under a plain `cargo build` with no GN action having
-# run first.
-#
-# Every output is optional. build_ui.py asks for the TypeScript and the
-# header; build_rust.py asks for the Rust. Before, asking for one meant
-# writing all three, so build_rust.py passed throwaway paths inside the
-# source tree and deleted them afterwards -- a non-atomic write into the
-# working tree from a build step, and racy if two targets ran at once.
+# Each output is requested separately; the build asks for what it needs.
 
 import argparse
 import json
@@ -62,17 +49,23 @@ def cpp_identifier(name: str) -> str:
 
 
 # What a message argument may be, and what the browser checks it against.
-#
-# TabId is its own kind rather than an alias for string because the browser
-# has to parse it and reject what does not parse -- a JavaScript number is
-# a double and cannot hold every u64 exactly, so an id that crossed as a
-# number could round to a different tab.
+# TabId is its own kind: a JavaScript number is a double and cannot hold
+# every u64 exactly, so an id crossing as a number could round to a
+# different tab.
 ARG_KINDS = {
     "string": "kString",
     "number": "kNumber",
     "boolean": "kBoolean",
     "TabId": "kTabId",
 }
+
+# The object a push handler is installed on, and the object the browser
+# reaches it through. The pages are ES modules, so a bare "setState" is
+# nowhere the browser can call it -- CallJavascriptFunctionUnsafe raises a
+# ReferenceError in the renderer with nothing on the browser side to
+# notice. One constant for both languages, so the two halves cannot pick
+# different objects.
+PUSH_NAMESPACE = "weglet"
 
 
 def check(contract: dict) -> None:
@@ -103,9 +96,9 @@ def check(contract: dict) -> None:
     if len(functions) != len(set(functions)):
         raise SystemExit("contract.json has a duplicate push function name\n")
 
-    # Two pushes at one page would both install on that page's global under
-    # different names, which works -- but the browser picks the function by
-    # page, so the second could never be called.
+    # Two pushes at one page would both install under different names, but
+    # the browser picks the function by page, so the second could never be
+    # called.
     targets = [push["page"] for push in pushes(contract).values()]
     if len(targets) != len(set(targets)):
         raise SystemExit(
@@ -152,10 +145,15 @@ def write_ts(contract: dict, out: str) -> None:
     lines += [
         "} as const;",
         "",
+        "// The object push handlers are installed on -- see protocol.ts.",
+        "// The browser calls `<namespace>.<function>`, so both halves come",
+        "// from here rather than being spelled out on either side.",
+        f'export const pushNamespace = "{PUSH_NAMESPACE}";',
+        "",
         "// The other direction: the function the browser calls on this page.",
-        "// Installed by name on a shared global -- see protocol.ts -- so the",
-        "// spelling has to match the browser's exactly. It did not once, and",
-        "// the new tab page received nothing at all.",
+        "// Installed under pushNamespace by this name, so the spelling has to",
+        "// match the browser's exactly. It did not once, and the new tab page",
+        "// received nothing at all.",
         "export const pushes = {",
     ]
     for name, push in pushes(contract).items():
@@ -348,13 +346,16 @@ def write_header(contract: dict, out: str) -> None:
     push_entries = pushes(contract)
     lines += [
         "// The other direction: the JavaScript function the browser calls on",
-        "// a page of each kind.",
+        "// a page of each kind, qualified by the object protocol.ts installs",
+        "// handlers on. Pass it to CallJavascriptFunctionUnsafe as it stands.",
         "//",
         "// Generated because this was the half of the contract nobody",
         "// generated, and the two sides drifted -- the browser called",
         "// weglet.setNewTabState at a page that had installed",
         "// weglet.setNewTab, so the new tab page received nothing and no",
-        "// build step noticed.",
+        "// build step noticed. Generating the name alone was not enough:",
+        "// the qualifier went missing next, and every push landed on a",
+        "// global that ES modules never create.",
         "struct Push {",
         "  PageKind page;",
         "  std::string_view function;",
@@ -365,7 +366,7 @@ def write_header(contract: dict, out: str) -> None:
     for _, push in push_entries.items():
         lines.append(
             f"    Push{{PageKind::{cpp_identifier(push['page'])}, "
-            f'"{push["function"]}"}},'
+            f'"{PUSH_NAMESPACE}.{push["function"]}"}},'
         )
     lines += [
         "};",
@@ -426,8 +427,8 @@ def write_header(contract: dict, out: str) -> None:
 
 def write(path: str, contents: str) -> None:
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    # Only touch the file when it changes: a rewritten timestamp makes ninja
-    # rebuild everything downstream for nothing.
+    # Only touch the file when it changes: a rewritten timestamp makes
+    # ninja rebuild everything downstream.
     if os.path.exists(path):
         with open(path, encoding="utf-8") as handle:
             if handle.read() == contents:
@@ -450,8 +451,7 @@ def main() -> int:
 
     contract = load(args.contract)
     # Run whichever output was asked for, so a mistake in contract.json is
-    # caught by the first build that reads it rather than by whichever one
-    # happens to generate the affected file.
+    # caught by the first build that reads it.
     check(contract)
 
     if args.ts:

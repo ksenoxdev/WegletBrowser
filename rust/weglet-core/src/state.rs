@@ -1,21 +1,17 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// rust/weglet-core/src/state.rs
+// Windows and their tabs: what exists, what is in front, what moves where.
 
 use crate::{Tab, TabId, WindowId, BLANK_TAB};
 
 // The shape a restored session arrives in: for each window, its tabs as
-// (history entries, cursor) pairs, and which of them was active.
-//
-// Named rather than written out because it is three levels of tuple and
-// appears in two signatures. Deliberately plain tuples and not a struct:
-// weglet-profile builds these and does not depend on this crate -- the
-// crate with no IO should not be a dependency of the one that is all IO.
+// (history entries, cursor) pairs, and which was active. Plain tuples
+// because weglet-profile builds these without depending on this crate.
 pub type RestoredTab = (Vec<String>, usize);
 pub type RestoredWindow = (Vec<RestoredTab>, usize);
 
-// One browser window: which tabs are its own is a property of the tabs,
-// so all a window holds is which of them is in front.
+// One browser window. Which tabs are its own is a property of the tabs,
+// so all it holds is which of them is in front.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Window {
     pub id: WindowId,
@@ -28,14 +24,10 @@ impl Window {
     }
 }
 
-// Which windows exist, which tabs are in each, and which tab is in front
-// of each. Owns nothing platform-specific, so every rule below is
-// testable without a browser.
+// Which windows exist, which tabs are in each, and which is in front.
 //
-// Tabs are kept in one list rather than one per window because their order
-// within a window is the tab strip's order and their identity is global --
-// the C++ side holds a tab by id and does not want to know which window it
-// was in when it took it.
+// Tabs are kept in one list rather than one per window: their order
+// within a window is the strip's order, and their identity is global.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppState {
     tabs: Vec<Tab>,
@@ -44,19 +36,17 @@ pub struct AppState {
     next_window: u64,
 }
 
-// A page can call window.open in a loop. Without a ceiling that is
-// unbounded memory and one renderer process per tab. Counted across every
-// window, because that is what the memory is.
+// A page can call window.open in a loop. Counted across every window,
+// because that is what the memory is.
 const MAX_TABS: usize = 100;
 
-// Likewise for windows, and lower: each one is a toolbar renderer of its
-// own on top of its tabs.
+// Likewise for windows, and lower: each is a toolbar renderer of its own
+// on top of its tabs.
 const MAX_WINDOWS: usize = 20;
 
 impl AppState {
     // Always starts with one window holding one tab: a browser with no
-    // window has no valid representation on screen, and every caller would
-    // have to handle it.
+    // window has no valid representation on screen.
     pub fn new() -> Self {
         let window = WindowId::new(0);
         let tab = TabId::new(0);
@@ -71,9 +61,8 @@ impl AppState {
         }
     }
 
-    // Rebuilds from a restored session. Takes windows, each a list of
-    // (history, cursor) pairs plus which of them was active, rather than
-    // Tabs -- so the profile crate does not have to know how a Tab is put
+    // Rebuilds from a restored session. Takes (history, cursor) pairs
+    // rather than Tabs, so weglet-profile need not know how a Tab is put
     // together.
     pub fn restore(windows: Vec<RestoredWindow>) -> Self {
         let mut state = Self {
@@ -103,8 +92,8 @@ impl AppState {
                 ids.push(id);
             }
             if ids.is_empty() {
-                // The tab ceiling was reached partway through. A window
-                // with no tabs cannot be shown, so it is not restored.
+                // The tab ceiling was reached partway through; a window
+                // with no tabs cannot be shown.
                 continue;
             }
             // Clamped, not trusted: the index comes off disk.
@@ -171,8 +160,7 @@ impl AppState {
         self.tabs_in(tab.window).position(|other| other.id == id)
     }
 
-    // Returns None when the ceiling is reached rather than silently doing
-    // nothing, so the caller can say why.
+    // None when the ceiling is reached, so the caller can say why.
     pub fn open_window(&mut self) -> Option<WindowId> {
         if self.windows.len() >= MAX_WINDOWS || self.tabs.len() >= MAX_TABS {
             return None;
@@ -189,9 +177,8 @@ impl AppState {
         Some(window)
     }
 
-    // True if the window existed. Its tabs go with it -- they have nowhere
-    // else to be shown. Closing the last window leaves a fresh one, for the
-    // same reason new() starts with one.
+    // True if the window existed. Its tabs go with it. Closing the last
+    // window leaves a fresh one.
     pub fn close_window(&mut self, window: WindowId) -> bool {
         if self.window(window).is_none() {
             return false;
@@ -202,8 +189,7 @@ impl AppState {
             let fresh = Self::new();
             self.tabs = fresh.tabs;
             self.windows = fresh.windows;
-            // Ids are not reused even across a full close: the C++ side
-            // may still hold one it is about to ask about.
+            // Ids are not reused: the C++ side may still hold one.
             let window = WindowId::new(self.next_window);
             self.next_window += 1;
             let tab = TabId::new(self.next_tab);
@@ -223,9 +209,8 @@ impl AppState {
         }
         let id = TabId::new(self.next_tab);
         self.next_tab += 1;
-        // Inserted after the last tab of this window rather than at the
-        // end of everything, so the strip order is the insertion order
-        // within each window.
+        // After the last tab of this window, not at the end of
+        // everything, so strip order is insertion order per window.
         let insert_at = self
             .tabs
             .iter()
@@ -255,8 +240,7 @@ impl AppState {
         }
 
         if self.active_id(window) == Some(id) {
-            // The one that took its place, or the new last one if it was
-            // the rightmost tab. Same as every other browser.
+            // The one that took its place, or the new last one.
             let next = position.min(self.tab_count_in(window) - 1);
             if let Some(tab) = self.tab_in_at(window, next) {
                 let tab_id = tab.id;
@@ -307,8 +291,7 @@ impl AppState {
         }
     }
 
-    // Ctrl+1..9, one-based as on the keyboard. 9 means "the last tab",
-    // which is what browsers do.
+    // Ctrl+1..9, one-based. 9 means the last tab.
     pub fn activate_by_position(&mut self, window: WindowId, position: usize) -> bool {
         let count = self.tab_count_in(window);
         if position == 0 || count == 0 {
@@ -325,8 +308,8 @@ impl AppState {
         }
     }
 
-    // `target` is an insertion index within the tab's own window, not
-    // "the tab to swap with".
+    // `target` is an insertion index within the tab's own window, not the
+    // tab to swap with.
     pub fn reorder(&mut self, id: TabId, target: usize) -> bool {
         let Some(from) = self.index_of(id) else {
             return false;
@@ -532,8 +515,8 @@ mod tests {
         assert_eq!(state.active_tab(second).unwrap().url(), BLANK_TAB);
     }
 
-    // The bug the flat model made unavoidable: two windows showing the
-    // same tabs and disagreeing about which was in front.
+    // Two windows must not show the same tabs and disagree about which is
+    // in front.
     #[test]
     fn each_window_has_its_own_tabs_and_its_own_active_one() {
         let mut state = AppState::new();

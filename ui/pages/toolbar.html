@@ -37,19 +37,30 @@
            itself. Enter is handled in toolbar.ts. -->
       <div class="address-form">
         <div class="nav-button" id="bookmark-toggle" role="button" tabindex="0"></div>
-        <input
-          class="address-bar"
-          id="address-bar"
-          type="text"
-          placeholder="Search or enter address"
-          autocomplete="off"
-          spellcheck="false"
-          aria-label="Address and search"
-        />
+        <div class="address-bar-wrap">
+          <input
+            class="address-bar"
+            id="address-bar"
+            type="text"
+            placeholder="Search or enter address"
+            data-i18n-placeholder="toolbar.addressPlaceholder"
+            autocomplete="off"
+            spellcheck="false"
+            aria-label="Address and search"
+          />
+          <div class="nav-button address-bar-icon" id="site-info" role="button" tabindex="0"></div>
+        </div>
         <div class="nav-button" id="copy-url" role="button" tabindex="0"></div>
+        <div class="nav-button" id="keep" role="button" tabindex="0"></div>
       </div>
 
-      <div class="nav-button" id="downloads-button" role="button" tabindex="0"></div>
+      <div class="nav-button" id="downloads-button" role="button" tabindex="0">
+        <svg class="downloads-spinner" width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <circle cx="16" cy="16" r="12" stroke="var(--color-ring)" stroke-width="2.5"
+            stroke-linecap="round" stroke-dasharray="19 56.5" />
+        </svg>
+        <span id="downloads-icon-slot"></span>
+      </div>
       <div class="nav-button" id="open-settings" role="button" tabindex="0"></div>
     </div>
     <script type="module" src="toolbar.js"></script>

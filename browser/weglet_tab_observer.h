@@ -1,6 +1,6 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// weglet/browser/weglet_tab_observer.h
+// Turns one tab's engine events into calls on its window.
 
 #ifndef WEGLET_BROWSER_WEGLET_TAB_OBSERVER_H_
 #define WEGLET_BROWSER_WEGLET_TAB_OBSERVER_H_
@@ -14,11 +14,8 @@ namespace weglet {
 
 class WegletWindow;
 
-// Turns one tab's engine events into calls on the window.
-//
-// Separate from WegletWindow because a window has many tabs and
-// WebContentsObserver watches one. Doing it inside the window would mean one
-// observer for whichever contents was attached last.
+// Separate from WegletWindow: a window has many tabs, and
+// WebContentsObserver watches one.
 class WegletTabObserver : public content::WebContentsObserver {
  public:
   // `window` owns this observer, so it outlives it.

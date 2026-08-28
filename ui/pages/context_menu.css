@@ -1,0 +1,48 @@
+/* Copyright 2026 Weglet - Licensed under Apache 2.0
+ *
+ * A small floating popup -- see menu.css, which this mirrors. Its whole
+ * window is exactly this card, so there is no outer scroll region.
+ */
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--color-surface-raised);
+}
+
+body {
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-menu);
+  box-sizing: border-box;
+  color: var(--color-text);
+  font-family: "Instrument Sans", sans-serif;
+  padding: 6px;
+}
+
+#items {
+  display: flex;
+  flex-direction: column;
+}
+
+.menu-item {
+  padding: var(--space-md) var(--space-lg);
+  border-radius: var(--radius-menu-item);
+  cursor: pointer;
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-family: "Instrument Sans", sans-serif;
+  text-align: left;
+  width: 100%;
+}
+
+.menu-item:hover {
+  background: var(--color-surface-hover);
+}
+
+.menu-item:disabled {
+  color: var(--color-text-dim);
+  cursor: default;
+  background: none;
+}

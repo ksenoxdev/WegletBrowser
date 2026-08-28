@@ -1,20 +1,15 @@
 #!/usr/bin/env python3
 # Copyright 2026 Weglet - Licensed under Apache 2.0
 #
-# weglet/check_chromium_version.py
-#
 # Compares weglet/CHROMIUM_VERSION against chrome/VERSION in the tree
 # being built.
 #
-# Weglet is a directory inside a Chromium checkout, and which checkout was
-# recorded nowhere -- not in weglet/DEPS, which is an include-rules file
-# and has no business pinning revisions. Building against an unexpected
-# tree therefore failed as a link error or a CHECK at startup, if it failed
-# at all.
+# Which checkout was recorded nowhere -- weglet/DEPS is an include-rules
+# file and has no business pinning revisions -- so building against an
+# unexpected tree failed as a link error or a startup CHECK, if at all.
 #
 # A mismatch is a warning by default and an error with --strict: the point
-# is to say which tree this is, not to stop someone deliberately trying a
-# newer one.
+# is to say which tree this is, not to stop someone trying a newer one.
 
 import argparse
 import os

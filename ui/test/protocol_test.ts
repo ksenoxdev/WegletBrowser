@@ -1,16 +1,11 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// weglet/ui/test/protocol_test.ts
-//
-// protocol.ts validates every push before a page acts on it. Nothing
-// tested that, and it is the code that decides whether a malformed
-// message is a dropped update with a console line or an exception halfway
+// protocol.ts validates every push before a page acts on it: this decides
+// whether a malformed message is a dropped update or an exception halfway
 // through rendering the tab strip.
 //
-// Run under Chromium's vendored node, the same one build_ui.py compiles
-// with -- see run_ui_tests.py. No test framework: a handful of assertions
-// and a runner is less to keep working than a dependency, and the project
-// deliberately has no npm.
+// Run under Chromium's vendored node -- see run_ui_tests.py. No test
+// framework, because the project has no npm.
 
 import {
   onNewTab,
@@ -33,9 +28,8 @@ interface TestGlobal {
 
 const host = globalThis as TestGlobal;
 
-// The runner exits non-zero on failure. Declared rather than pulled in
-// from @types/node: one field is not worth a dependency the build would
-// have to fetch.
+// The runner exits non-zero on failure. Declared rather than pulled from
+// @types/node: one field is not worth a dependency.
 declare const process: { exit(code: number): never };
 
 let failures = 0;
@@ -56,8 +50,7 @@ function equal(actual: unknown, expected: unknown, what: string): void {
   );
 }
 
-// Each test starts from nothing installed and nothing sent, so one leaving
-// state behind cannot make the next one pass.
+// Each test starts from nothing installed and nothing sent.
 const sent: string[] = [];
 
 function reset(): void {
@@ -102,8 +95,7 @@ test("registering installs the generated name and asks for state", () => {
     typeof host.weglet?.[pushes.state] === "function",
     `installs weglet.${pushes.state}`,
   );
-  // The browser only pushes on a change, so a page that loaded late has to
-  // ask. This is the path everything actually runs on.
+  // The browser only pushes on a change, so a page that loaded late asks.
   equal(sent, ["requestState"], "asks for state on registration");
 });
 
@@ -122,7 +114,7 @@ test("several pushes coexist on one global", () => {
 test("a well-formed state arrives intact", () => {
   const got: BrowserState[] = [];
   onState((state) => got.push(state));
-  push(pushes.state, { tabs: [tab], activeId: "1", focusOmnibox: false });
+  push(pushes.state, { tabs: [tab], activeId: "1", focusOmnibox: false, bookmarked: false });
   equal(got[0]?.tabs.length, 1, "one tab");
   equal(got[0]?.tabs[0]?.loading, false, "carries loading");
   equal(got[0]?.activeId, "1", "active id");
@@ -138,13 +130,15 @@ test("a malformed state is dropped, not passed on", () => {
     null,
     "not an object",
     {},
-    { tabs: [], activeId: 1, focusOmnibox: false }, // an id as a number
-    { tabs: "no", activeId: "1", focusOmnibox: false },
-    { tabs: [{ ...tab, id: 1 }], activeId: "1", focusOmnibox: false },
-    { tabs: [{ ...tab, loading: "yes" }], activeId: "1", focusOmnibox: false },
-    { tabs: [{ ...tab, canGoBack: undefined }], activeId: "1", focusOmnibox: false },
-    { tabs: [], activeId: "1" },
-    { tabs: [], activeId: "1", focusOmnibox: "yes" },
+    { tabs: [], activeId: 1, focusOmnibox: false, bookmarked: false }, // an id as a number
+    { tabs: "no", activeId: "1", focusOmnibox: false, bookmarked: false },
+    { tabs: [{ ...tab, id: 1 }], activeId: "1", focusOmnibox: false, bookmarked: false },
+    { tabs: [{ ...tab, loading: "yes" }], activeId: "1", focusOmnibox: false, bookmarked: false },
+    { tabs: [{ ...tab, canGoBack: undefined }], activeId: "1", focusOmnibox: false, bookmarked: false },
+    { tabs: [], activeId: "1", bookmarked: false },
+    { tabs: [], activeId: "1", focusOmnibox: "yes", bookmarked: false },
+    { tabs: [], activeId: "1", focusOmnibox: false }, // missing bookmarked
+    { tabs: [], activeId: "1", focusOmnibox: false, bookmarked: "yes" },
   ]) {
     push(pushes.state, bad);
   }
@@ -162,6 +156,7 @@ test("a state with one bad tab is rejected whole", () => {
     tabs: [tab, { ...tab, id: 2 }],
     activeId: "1",
     focusOmnibox: false,
+    bookmarked: false,
   });
   equal(calls, 0, "rejected");
 });
@@ -201,6 +196,9 @@ test("settings arrive and an unknown shape is refused", () => {
     blockedHosts: ["ads.example"],
     accentColor: "#A855F7",
     addressBarShape: "pill",
+    threatFeedEnabled: true,
+    threatFeedUpdatedAt: 0,
+    threatFeedLastUpdateFailed: false,
   };
   push(pushes.settings, good);
   equal(got[0]?.addressBarShape, "pill", "shape");
@@ -211,7 +209,7 @@ test("settings arrive and an unknown shape is refused", () => {
     calls += 1;
   });
   // The shape drives a CSS attribute. An unrecognised one would leave the
-  // address bar with no shape at all rather than a wrong one.
+  // address bar with no shape at all.
   push(pushes.settings, { ...good, addressBarShape: "octagon" });
   push(pushes.settings, { ...good, engines: "no" });
   push(pushes.settings, { ...good, restoreSession: "yes" });
@@ -234,8 +232,8 @@ test("a risk notice arrives with its level intact", () => {
   equal(got[0]?.host, "gooogle.com", "host");
 });
 
-// The level decides whether a way through is offered at all. Guessing
-// "warning" for an unrecognised value would invent a way past a block.
+// The level decides whether a way through is offered. Guessing "warning"
+// would invent a way past a block.
 test("an unrecognised risk level is refused rather than guessed", () => {
   let calls = 0;
   onRisk(() => {

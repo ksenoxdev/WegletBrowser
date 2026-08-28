@@ -1,16 +1,12 @@
 # Copyright 2026 Weglet - Licensed under Apache 2.0
 #
-# weglet/rust/BUILD.gn
-#
-# Cargo builds one static library; GN links it. See build_rust.py for why
-# cargo rather than GN's own Rust support.
+# Cargo builds one static library; GN links it. See build_rust.py.
 
 import("//build/config/rust.gni")
 
 declare_args() {
-  # Debug Rust with a debug Chromium. Off by default even in a debug build:
-  # a debug Rust build of the security corpus is noticeably slower and it
-  # is rarely what is being debugged.
+  # Debug Rust with a debug Chromium. Off even in a debug build: a debug
+  # build of the security corpus is noticeably slower.
   weglet_rust_debug = false
 }
 
@@ -30,14 +26,14 @@ _lib_path = "$target_out_dir/$_lib_name"
 action("weglet_ffi_build") {
   script = "build_rust.py"
 
-  # Not listed file by file: the depfile below is generated from the actual
-  # sources, so adding a .rs file does not mean editing this list.
+    # Not listed file by file: the depfile below is generated from the
+    # actual sources.
   inputs = [
     # The shared build helpers both this and the other scripts import.
     "//weglet/build_support.py",
 
-    # Compiled in with include_str!, so a change to one is a rebuild.
-    # The depfile lists .rs and the manifests; these are data.
+    # Compiled in with include_str!, so a change to one is a rebuild. The
+    # depfile lists .rs and the manifests; these are data.
     "weglet-profile/data/engines.toml",
     "weglet-security/data/blocklist.txt",
     "weglet-security/data/brands.toml",
@@ -63,8 +59,7 @@ action("weglet_ffi_build") {
   ]
 }
 
-# What the rest of the build depends on. Anything linking this gets the
-# header path and the library.
+# What the rest of the build depends on: the header path and the library.
 group("weglet_ffi") {
   public_configs = [ ":weglet_ffi_config" ]
   deps = [ ":weglet_ffi_build" ]
@@ -75,8 +70,7 @@ config("weglet_ffi_config") {
   libs = [ _lib_path ]
 
   if (is_win) {
-    # Rust's std pulls these in on Windows. Without them the link fails on
-    # symbols that look like they should be in the CRT and are not.
+    # Rust's std pulls these in on Windows.
     libs += [
       "advapi32.lib",
       "bcrypt.lib",

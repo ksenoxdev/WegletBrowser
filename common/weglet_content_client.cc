@@ -1,6 +1,6 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// weglet/common/weglet_content_client.cc
+// ContentClient: resource-pack access for content and Blink.
 
 #include "weglet/common/weglet_content_client.h"
 

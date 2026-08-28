@@ -1,0 +1,243 @@
+/* Copyright 2026 Weglet - Licensed under Apache 2.0
+ *
+ * Same glass-panel look and the same segmented-switcher widget as
+ * settings.css. Both duplicate the rules rather than share them, the same
+ * way newtab.css and settings.css don't share a base beyond tokens.css.
+ */
+
+body {
+  display: flex;
+  justify-content: center;
+  padding: var(--layout-settings-padding-top) var(--space-xl);
+  /* Reserves the scrollbar's own width: switching tabs changes how tall the
+     page is, and without this the whole centred .page shifts sideways by
+     the scrollbar's width right as you switch. */
+  scrollbar-gutter: stable;
+}
+
+.page {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: var(--layout-settings-max-width);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-xxl);
+}
+
+.header h1 {
+  font-family: "Outfit", sans-serif;
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-display);
+  margin: 0;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.clear-btn {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(240, 153, 123, 0.3);
+  background: transparent;
+  color: var(--color-danger);
+  border-radius: var(--radius-pill);
+  padding: var(--space-sm) var(--space-lg);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.clear-btn:hover {
+  background: rgba(240, 153, 123, 0.12);
+}
+
+.done {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-text);
+  border-radius: var(--radius-pill);
+  padding: var(--space-sm) var(--space-lg);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.done:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* The same sliding glass pill as settings.css's switcher -- see there for
+   why width/position are custom properties rather than computed pixels. */
+.switcher {
+  position: relative;
+  display: flex;
+  padding: var(--space-sm);
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(14px);
+  margin-bottom: var(--space-xxl);
+}
+
+.switcher-pill {
+  position: absolute;
+  top: var(--space-sm);
+  left: var(--space-sm);
+  width: calc((100% - var(--space-md)) / var(--count, 2));
+  height: calc(100% - var(--space-md));
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  transition: transform var(--motion-switcher) cubic-bezier(0.22, 1, 0.36, 1);
+  transform: translateX(calc(100% * var(--index, 0)));
+  pointer-events: none;
+}
+
+.switcher-tab {
+  position: relative;
+  flex: 1;
+  text-align: center;
+  padding: var(--space-md) 0;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--color-text-dim);
+  cursor: pointer;
+  z-index: 1;
+  transition: color var(--motion-fast), font-weight var(--motion-fast);
+}
+
+.switcher-tab.active {
+  color: var(--color-text);
+  font-weight: var(--font-weight-bold);
+}
+
+.panel {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: var(--radius-panel-inner);
+  padding: var(--space-lg);
+}
+
+.panel[hidden] {
+  display: none;
+}
+
+.empty {
+  padding: var(--space-xxl) var(--space-lg);
+  text-align: center;
+  color: var(--color-text-dim);
+  font-size: var(--font-size-sm);
+}
+
+.day-heading {
+  font-family: "Outfit", sans-serif;
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: var(--space-md) var(--space-sm) var(--space-sm);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.row-icon {
+  width: var(--layout-row-icon);
+  height: var(--layout-row-icon);
+  border-radius: var(--radius-square);
+  background: rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-ring);
+  flex-shrink: 0;
+}
+
+.row-icon.failed {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+/* A download still in flight: a slow pulse rather than a spinner, since
+   the icon here is the file type, not a loading glyph -- the same
+   restraint history.css's own .tab-favicon spinner exists to avoid
+   crowding a 24px icon with a second element. */
+.row-icon.loading {
+  animation: row-icon-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes row-icon-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.row-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.row-title {
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-sub {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-time {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-dim);
+  flex-shrink: 0;
+}
+
+.row-reveal {
+  flex-shrink: 0;
+  width: var(--layout-row-action);
+  height: var(--layout-row-action);
+  border: none;
+  background: transparent;
+  color: var(--color-text-dim);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-square);
+}
+
+.row-reveal:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--color-text);
+}

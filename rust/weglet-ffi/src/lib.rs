@@ -1,26 +1,14 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// rust/weglet-ffi/src/lib.rs
-//
 // The only place C++ and Rust touch.
 //
-// Rules for everything in this file:
-//
-//   * No Rust type crosses the boundary. C++ sees an opaque handle and
-//     C strings, nothing else.
-//   * Every string handed to C++ is owned by Rust and freed by Rust, via
-//     weglet_string_free. C++ never frees a pointer from here, and never
-//     keeps one past the next call that could change the state.
-//   * Nothing panics across the boundary. panic = "abort" in the release
-//     profile makes unwinding into C++ impossible, and every entry point
-//     handles its own failure instead of relying on that.
-//   * A null or unknown handle is a no-op with a defined return, not a
-//     crash. C++ has bugs too.
+// No Rust type crosses the boundary: C++ sees an opaque handle and C
+// strings. Every string handed over is freed with weglet_string_free.
+// Nothing panics across the boundary. A null or unknown handle is a
+// no-op with a defined return.
 
-// Private except for `weglet_string_free`, re-exported below so
-// tests/boundary.rs can bind it by the same name the browser links
-// against. The module itself stays private: nothing outside this crate
-// has business constructing the strings, only freeing them.
+// Private except for `weglet_string_free`, re-exported so
+// tests/boundary.rs can bind it by the name the browser links against.
 mod string;
 
 pub use string::weglet_string_free;
@@ -28,13 +16,15 @@ pub use string::weglet_string_free;
 use std::ffi::c_char;
 
 use weglet_core::{AppState, OmniboxAction, TabId, WindowId};
-use weglet_profile::{Paths, Session, SessionTab, SessionWindow, Settings};
+use weglet_profile::{
+    Bookmarks, BrowsingHistory, DownloadStatus, Downloads, Paths, Session, SessionTab,
+    SessionWindow, Settings, ThreatFeedCache,
+};
 
 use crate::string::{into_c_string, str_from_c};
 
-// Repeated on every entry point below rather than written once, because
-// clippy wants it per function and because a caller reading one signature
-// should not have to go looking for the rules.
+// Repeated per entry point because clippy wants it there, and because a
+// caller reading one signature should not have to go looking.
 macro_rules! safety_doc {
     () => {
         "# Safety\n\n\
@@ -47,42 +37,42 @@ macro_rules! safety_doc {
     };
 }
 
-// Everything the browser knows, behind one pointer. C++ holds this for
-// the life of the process and passes it back on every call.
+// Everything the browser knows, behind one pointer. C++ holds it for the
+// life of the process and passes it back on every call.
 pub struct WegletState {
     state: AppState,
     settings: Settings,
+    bookmarks: Bookmarks,
+    history: BrowsingHistory,
+    downloads: Downloads,
+    threat_feed: ThreatFeedCache,
     paths: Option<Paths>,
-    // Set when settings changed and have not reached the disk yet.
-    //
-    // Writing on every change meant an fsync -- see weglet-profile's
-    // atomic::write, which syncs before it renames, and has to -- on the
-    // browser's UI thread, inside the click that toggled a setting.
-    // Marking instead and letting the browser flush on its own schedule
-    // keeps the atomicity and takes the disk out of the input path. The
-    // flush still happens: weglet_flush_settings on a timer, and again at
-    // shutdown, so nothing is lost by deferring it.
+    // Set when the matching store changed and has not reached the disk
+    // yet. An atomic write ends in fsync, and the moment something
+    // changed -- a click, a navigation, a download progress callback --
+    // is not the place for it. weglet_flush_settings runs on a timer and
+    // at shutdown and flushes every dirty store, not settings alone.
     settings_dirty: bool,
+    bookmarks_dirty: bool,
+    history_dirty: bool,
+    downloads_dirty: bool,
+    threat_feed_dirty: bool,
 }
 
 // SAFETY: the caller must be the browser process's UI thread, and only
-// that thread. Nothing here is synchronised, because the state it guards
-// is single-threaded by design -- the same rule the C++ side already
-// follows for WebContents.
+// that thread. Nothing here is synchronised.
 #[no_mangle]
 pub extern "C" fn weglet_state_new() -> *mut WegletState {
     let paths = Paths::discover().ok();
 
     // A settings file that will not parse must not stop the browser from
-    // opening. The C++ side logs the error; here the fallback is defaults.
+    // opening. The C++ side logs it; here the fallback is defaults.
     let settings = paths
         .as_ref()
         .and_then(|paths| Settings::load(&paths.settings_file()).ok())
         .unwrap_or_default();
 
-    // Never restore before the terms are accepted: the first tab has to be
-    // the terms screen, not whatever was open last time.
-    let state = if settings.restore_session && settings.terms_accepted {
+    let state = if settings.restore_session {
         paths
             .as_ref()
             .and_then(|paths| Session::load(&paths.session_file()).ok())
@@ -93,23 +83,47 @@ pub extern "C" fn weglet_state_new() -> *mut WegletState {
     };
 
     // Optional per-profile data files, applied before anything asks a
-    // question that depends on them. Absent is the normal case and means
-    // the compiled-in table stands; present means the user wants their
-    // own list, and it replaces rather than extends -- someone who
-    // supplies a list has a reason, and silently keeping entries they
-    // removed would defeat it.
-    //
-    // A malformed file is reported and ignored rather than fatal: a bad
-    // list must not be the reason the browser will not start.
+    // question that depends on them. Present means the user's own list
+    // replaces the built-in one. A malformed file is ignored, never
+    // fatal.
     if let Some(paths) = &paths {
         load_overrides(paths);
     }
 
+    let bookmarks = paths
+        .as_ref()
+        .and_then(|paths| Bookmarks::load(&paths.bookmarks_file()).ok())
+        .unwrap_or_default();
+    let history = paths
+        .as_ref()
+        .and_then(|paths| BrowsingHistory::load(&paths.history_file()).ok())
+        .unwrap_or_default();
+    let mut downloads = paths
+        .as_ref()
+        .and_then(|paths| Downloads::load(&paths.downloads_file()).ok())
+        .unwrap_or_default();
+    // The browser closed mid-download last time; there is no in-progress
+    // download left to report back to, on this or any run.
+    let downloads_dirty = downloads.fail_orphaned_in_progress() > 0;
+    let threat_feed = paths
+        .as_ref()
+        .and_then(|paths| ThreatFeedCache::load(&paths.threat_feed_file()).ok())
+        .unwrap_or_default();
+    weglet_security::set_live_hashes(threat_feed.hashes.iter().cloned().collect());
+
     Box::into_raw(Box::new(WegletState {
         state,
         settings,
+        bookmarks,
+        history,
+        downloads,
+        threat_feed,
         paths,
         settings_dirty: false,
+        bookmarks_dirty: false,
+        history_dirty: false,
+        downloads_dirty,
+        threat_feed_dirty: false,
     }))
 }
 
@@ -150,10 +164,7 @@ unsafe fn as_mut<'a>(state: *mut WegletState) -> Option<&'a mut WegletState> {
 // Windows
 // ---------------------------------------------------------------------
 
-// Every tab question below takes the window it is about. The model used
-// to hold one flat tab list and one active tab, so a second window would
-// have shown the same tabs and fought over which was in front -- while the
-// C++ side already counted windows and quit when the last one closed.
+// Every tab question below takes the window it is about.
 
 #[doc = safety_doc!()]
 #[no_mangle]
@@ -162,8 +173,8 @@ pub unsafe extern "C" fn weglet_window_count(state: *const WegletState) -> usize
     unsafe { as_ref(state) }.map_or(0, |state| state.state.windows().len())
 }
 
-// The id at `index`, or 0 when out of range. Ids start at 0 too, so
-// callers read the count first.
+// The id at `index`, or 0 when out of range. Ids start at 0, so callers
+// read the count first.
 #[doc = safety_doc!()]
 #[no_mangle]
 pub unsafe extern "C" fn weglet_window_id_at(state: *const WegletState, index: usize) -> u64 {
@@ -174,7 +185,7 @@ pub unsafe extern "C" fn weglet_window_id_at(state: *const WegletState, index: u
 }
 
 // The new window's id, or 0 when the ceiling is reached. It starts with
-// one blank tab, the same way the first window does.
+// one blank tab.
 #[doc = safety_doc!()]
 #[no_mangle]
 pub unsafe extern "C" fn weglet_open_window(state: *mut WegletState) -> u64 {
@@ -184,8 +195,7 @@ pub unsafe extern "C" fn weglet_open_window(state: *mut WegletState) -> u64 {
         .map_or(0, |id| id.value())
 }
 
-// Its tabs go with it. Closing the last window leaves a fresh one, so the
-// model always has something a window could show.
+// Its tabs go with it. Closing the last window leaves a fresh one.
 #[doc = safety_doc!()]
 #[no_mangle]
 pub unsafe extern "C" fn weglet_close_window(state: *mut WegletState, window: u64) -> bool {
@@ -194,8 +204,8 @@ pub unsafe extern "C" fn weglet_close_window(state: *mut WegletState, window: u6
         .is_some_and(|state| state.state.close_window(WindowId::new(window)))
 }
 
-// Which window a tab is in. 0 is a real window id, so callers that need
-// to tell "window 0" from "no such tab" ask about the tab first.
+// Which window a tab is in. 0 is a real window id, so ask about the tab
+// first to tell it from "no such tab".
 #[doc = safety_doc!()]
 #[no_mangle]
 pub unsafe extern "C" fn weglet_tab_window(state: *const WegletState, id: u64) -> u64 {
@@ -218,8 +228,8 @@ pub unsafe extern "C" fn weglet_tab_count(state: *const WegletState, window: u64
     })
 }
 
-// The id at `index`, or 0 if out of range. Ids start at 0 too, so callers
-// check the count first -- which is why this pairs with weglet_tab_count.
+// The id at `index`, or 0 if out of range. Ids start at 0, so callers
+// check weglet_tab_count first.
 #[doc = safety_doc!()]
 #[no_mangle]
 pub unsafe extern "C" fn weglet_tab_id_at(
@@ -274,9 +284,7 @@ pub unsafe extern "C" fn weglet_tab_can_go_back(state: *const WegletState, id: u
         .is_some_and(|tab| tab.history.can_go_back())
 }
 
-// Whether this tab is loading. The model has kept this since
-// weglet_tab_loading_changed existed; nothing could read it, so the tab
-// strip had a spinner in its CSS and no way to know when to show it.
+// Whether this tab is loading.
 #[doc = safety_doc!()]
 #[no_mangle]
 pub unsafe extern "C" fn weglet_tab_loading(state: *const WegletState, id: u64) -> bool {
@@ -389,8 +397,7 @@ pub unsafe extern "C" fn weglet_tab_navigated(
 }
 
 // A redirect, or history.replaceState: the same entry, a different URL.
-// Separate from weglet_tab_navigated because adding an entry here would
-// make Back land the user on the page that redirected them.
+// Adding an entry here would make Back land on the page that redirected.
 #[doc = safety_doc!()]
 #[no_mangle]
 pub unsafe extern "C" fn weglet_tab_url_replaced(
@@ -474,8 +481,7 @@ pub unsafe extern "C" fn weglet_tab_loading_changed(
 // Omnibox
 // ---------------------------------------------------------------------
 
-// What the user typed, turned into a URL to load. Search terms become a
-// search URL for the configured engine. Owned by the caller.
+// What the user typed, turned into a URL to load. Owned by the caller.
 #[doc = safety_doc!()]
 #[no_mangle]
 pub unsafe extern "C" fn weglet_omnibox_resolve(
@@ -498,9 +504,8 @@ pub unsafe extern "C" fn weglet_omnibox_resolve(
             &query,
             &state.settings.custom_search_url,
         )
-        // A configured-but-broken custom engine, or an id an override
-        // removed, falls back to the default rather than returning
-        // nothing -- Enter in the address bar has to go somewhere.
+        // A broken custom engine, or an id an override removed, falls
+        // back to the default: Enter has to go somewhere.
         .unwrap_or_else(|| {
             weglet_profile::query_url(weglet_profile::default_engine_id(), &query, "")
                 .expect("the default engine always produces a URL")
@@ -513,36 +518,17 @@ pub unsafe extern "C" fn weglet_omnibox_resolve(
 // Security
 // ---------------------------------------------------------------------
 
-// One assessment, one call.
-//
-// 0 = nothing to say, 1 = warn, 2 = block. Ints rather than an enum
-// because an enum's layout across the boundary is one more thing to keep
-// in step by hand.
-//
-// `title`, `reason` and `host` may each be null when the caller does not
-// want that part. Any non-null one is filled with an owned string the
-// caller frees with weglet_string_free -- including when the answer is 0,
-// where all three are empty strings rather than untouched, so a caller
-// cannot read whatever the pointer happened to hold.
-//
-// The four separate entry points this replaced each re-ran the whole
-// assessment from the raw URL -- punycode, the public suffix list, the
-// skeleton fold and every brand rule, four times for one navigation.
-// That was to avoid a risk object living across the boundary; filling
-// out-params costs no lifetime and does the work once. It matters now
-// that assessment is on the navigation path rather than only behind the
-// address bar.
-//
-// The state is not consulted here: this is a pure function of the URL.
-// The user's own block list is a separate question -- see
+// 0 = nothing to say, 1 = warn, 2 = block (ints, not an enum, so the
+// layout across the boundary stays fixed). `title`/`reason`/`host` may
+// each be null; a non-null one is always filled, even when the answer
+// is 0. A pure function of the URL; the user's own block list is
 // weglet_is_host_blocked.
 ///
 /// # Safety
 ///
-/// `url` must be null or NUL-terminated and valid for the call. Each of
-/// `title`, `reason` and `host` must be null or point at a writable
-/// `char*`. Every string written is owned by the caller and freed with
-/// `weglet_string_free`.
+/// `url` must be null or NUL-terminated. Each of `title`, `reason` and
+/// `host` must be null or a writable `char*`; any string written is
+/// owned by the caller and freed with `weglet_string_free`.
 #[no_mangle]
 pub unsafe extern "C" fn weglet_assess_navigation(
     url: *const c_char,
@@ -574,9 +560,8 @@ pub unsafe extern "C" fn weglet_assess_navigation(
     };
     write(title, risk.title);
     write(reason, risk.reason);
-    // Empty when the assessment has no host to show -- an unparseable
-    // URL, for instance. The target URL is not returned: the caller
-    // already has it, since it is what was passed in.
+    // Empty when the assessment has no host to show. The target URL is
+    // not returned: the caller passed it in.
     write(host, risk.normalized_host.unwrap_or_default());
     level
 }
@@ -598,29 +583,18 @@ pub unsafe extern "C" fn weglet_is_host_blocked(
     is_blocked(state, host)
 }
 
-// The same question asked about a whole URL.
-//
-// Exists because the caller that matters is the navigation path, which
-// holds a URL and not a host, and pulling the host out on the C++ side
-// would put a second host parser next to weglet-url's -- the one that
-// already knows a backslash ends the authority and that the host is what
-// follows the *last* '@'. Getting that wrong on this particular path
-// means "google.com@evil.example" is checked as google.com.
-//
-// False for anything with no host at all (about:blank, chrome://weglet/):
-// there is nothing to match a block list against, and a page of ours must
-// never be blockable by an entry the user typed.
-// The same question about a whole URL, with the wording for the notice.
-//
-// `title` and `reason` may each be null; a non-null one is always written,
-// empty when the answer is false. The wording lives in weglet-security
-// with every other string the notice page shows.
+// Same question, whole URL, with the wording for the notice. The host is
+// pulled out on this side -- a second parser in C++ wouldn't know a
+// backslash ends the authority and the host follows the last '@', which
+// is what makes "google.com@evil.example" evil.example. False for
+// anything with no host (about:blank, chrome://weglet/). `title`/`reason`
+// may each be null; a non-null one is always written, empty when false.
 ///
 /// # Safety
 ///
 /// `url` must be null or NUL-terminated. `title` and `reason` must each be
-/// null or point at a writable `char*`; any string written is owned by the
-/// caller and freed with `weglet_string_free`.
+/// null or a writable `char*`; any string written is owned by the caller
+/// and freed with `weglet_string_free`.
 #[no_mangle]
 pub unsafe extern "C" fn weglet_is_url_blocked(
     state: *const WegletState,
@@ -642,8 +616,8 @@ pub unsafe extern "C" fn weglet_is_url_blocked(
             .is_some_and(|host| is_blocked(state, host))
     });
 
-    // Written either way, like weglet_assess_navigation, so a caller
-    // cannot read whatever the pointer held before the call.
+    // Written either way, so a caller cannot read whatever the pointer
+    // held before the call.
     if blocked {
         write(title, weglet_security::USER_BLOCK_TITLE);
         write(reason, weglet_security::USER_BLOCK_REASON);
@@ -698,8 +672,7 @@ pub unsafe extern "C" fn weglet_shortcut_url(
     into_c_string(url)
 }
 
-// False when the dock is full, so the caller can say so rather than leaving
-// the user wondering why nothing happened.
+// False when the dock is full, so the caller can say so.
 #[doc = safety_doc!()]
 #[no_mangle]
 pub unsafe extern "C" fn weglet_add_shortcut(
@@ -717,8 +690,8 @@ pub unsafe extern "C" fn weglet_add_shortcut(
     else {
         return false;
     };
-    // The URL is stored as typed and resolved when the tile is clicked, the
-    // same way an address bar entry is -- so "example.com" works here too.
+    // Stored as typed and resolved when the tile is clicked, the same way
+    // an address bar entry is, so "example.com" works here too.
     if !state.settings.add_shortcut(title, url) {
         return false;
     }
@@ -768,8 +741,8 @@ pub unsafe extern "C" fn weglet_remove_shortcut(
     true
 }
 
-// The line under the new tab page's search field. Composed here because the
-// engine is a profile setting and the page does not read the profile.
+// The line under the new tab page's search field. Composed here because
+// the engine is a profile setting and the page does not read the profile.
 #[doc = safety_doc!()]
 #[no_mangle]
 pub unsafe extern "C" fn weglet_new_tab_hint(state: *const WegletState) -> *mut c_char {
@@ -784,12 +757,539 @@ pub unsafe extern "C" fn weglet_new_tab_hint(state: *const WegletState) -> *mut 
 }
 
 // ---------------------------------------------------------------------
+// Bookmarks
+// ---------------------------------------------------------------------
+
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_bookmark_count(state: *const WegletState) -> usize {
+    // SAFETY: contract of as_ref.
+    unsafe { as_ref(state) }.map_or(0, |state| state.bookmarks.entries.len())
+}
+
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_bookmark_title_at(
+    state: *const WegletState,
+    index: usize,
+) -> *mut c_char {
+    // SAFETY: contract of as_ref.
+    let title = unsafe { as_ref(state) }
+        .and_then(|state| state.bookmarks.entries.get(index))
+        .map(|bookmark| bookmark.title.clone())
+        .unwrap_or_default();
+    into_c_string(title)
+}
+
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_bookmark_url_at(
+    state: *const WegletState,
+    index: usize,
+) -> *mut c_char {
+    // SAFETY: contract of as_ref.
+    let url = unsafe { as_ref(state) }
+        .and_then(|state| state.bookmarks.entries.get(index))
+        .map(|bookmark| bookmark.url.clone())
+        .unwrap_or_default();
+    into_c_string(url)
+}
+
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_is_bookmarked(
+    state: *const WegletState,
+    url: *const c_char,
+) -> bool {
+    // SAFETY: contract of as_ref and str_from_c.
+    let Some(state) = (unsafe { as_ref(state) }) else {
+        return false;
+    };
+    let Some(url) = (unsafe { str_from_c(url) }) else {
+        return false;
+    };
+    state.bookmarks.is_bookmarked(url)
+}
+
+// Adds `url` if it is not already saved, removes it if it is. Returns
+// whether the page is bookmarked after the call, so the caller can
+// repaint the toolbar's star from one answer rather than asking twice.
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_toggle_bookmark(
+    state: *mut WegletState,
+    title: *const c_char,
+    url: *const c_char,
+) -> bool {
+    // SAFETY: contract of as_mut and str_from_c.
+    let Some(state) = (unsafe { as_mut(state) }) else {
+        return false;
+    };
+    let (Some(title), Some(url)) = (unsafe { str_from_c(title) }, unsafe { str_from_c(url) })
+    else {
+        return false;
+    };
+    let now_bookmarked = if state.bookmarks.is_bookmarked(url) {
+        let index = state
+            .bookmarks
+            .entries
+            .iter()
+            .position(|entry| entry.url == url);
+        if let Some(index) = index {
+            state.bookmarks.remove(index);
+        }
+        false
+    } else {
+        state.bookmarks.add(title, url);
+        true
+    };
+    state.persist_bookmarks();
+    now_bookmarked
+}
+
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_remove_bookmark(state: *mut WegletState, index: usize) -> bool {
+    // SAFETY: contract of as_mut.
+    let Some(state) = (unsafe { as_mut(state) }) else {
+        return false;
+    };
+    if !state.bookmarks.remove(index) {
+        return false;
+    }
+    state.persist_bookmarks();
+    true
+}
+
+// ---------------------------------------------------------------------
+// Browsing history
+// ---------------------------------------------------------------------
+
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_history_count(state: *const WegletState) -> usize {
+    // SAFETY: contract of as_ref.
+    unsafe { as_ref(state) }.map_or(0, |state| state.history.entries.len())
+}
+
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_history_query_at(
+    state: *const WegletState,
+    index: usize,
+) -> *mut c_char {
+    // SAFETY: contract of as_ref.
+    let query = unsafe { as_ref(state) }
+        .and_then(|state| state.history.entries.get(index))
+        .map(|entry| entry.query.clone())
+        .unwrap_or_default();
+    into_c_string(query)
+}
+
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_history_url_at(
+    state: *const WegletState,
+    index: usize,
+) -> *mut c_char {
+    // SAFETY: contract of as_ref.
+    let url = unsafe { as_ref(state) }
+        .and_then(|state| state.history.entries.get(index))
+        .map(|entry| entry.url.clone())
+        .unwrap_or_default();
+    into_c_string(url)
+}
+
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_history_visited_at_at(
+    state: *const WegletState,
+    index: usize,
+) -> u64 {
+    // SAFETY: contract of as_ref.
+    unsafe { as_ref(state) }
+        .and_then(|state| state.history.entries.get(index))
+        .map_or(0, |entry| entry.visited_at)
+}
+
+// Called once a typed address resolves -- to a search results page, or
+// to itself when it was already a URL. `query` is what the user typed,
+// `url` is where it went.
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_record_history(
+    state: *mut WegletState,
+    query: *const c_char,
+    url: *const c_char,
+) {
+    // SAFETY: contract of as_mut and str_from_c.
+    let Some(state) = (unsafe { as_mut(state) }) else {
+        return;
+    };
+    let (Some(query), Some(url)) = (unsafe { str_from_c(query) }, unsafe { str_from_c(url) })
+    else {
+        return;
+    };
+    state.history.record(query, url);
+    state.persist_history();
+}
+
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_clear_search_history(state: *mut WegletState) {
+    // SAFETY: contract of as_mut.
+    let Some(state) = (unsafe { as_mut(state) }) else {
+        return;
+    };
+    state.history.clear();
+    state.persist_history();
+}
+
+// ---------------------------------------------------------------------
+// Downloads
+// ---------------------------------------------------------------------
+
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_download_count(state: *const WegletState) -> usize {
+    // SAFETY: contract of as_ref.
+    unsafe { as_ref(state) }.map_or(0, |state| state.downloads.records.len())
+}
+
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_download_filename_at(
+    state: *const WegletState,
+    index: usize,
+) -> *mut c_char {
+    // SAFETY: contract of as_ref.
+    let filename = unsafe { as_ref(state) }
+        .and_then(|state| state.downloads.records.get(index))
+        .map(|record| record.filename.clone())
+        .unwrap_or_default();
+    into_c_string(filename)
+}
+
+// 0 = in progress, 1 = completed, 2 = failed.
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_download_status_at(
+    state: *const WegletState,
+    index: usize,
+) -> u32 {
+    // SAFETY: contract of as_ref.
+    unsafe { as_ref(state) }
+        .and_then(|state| state.downloads.records.get(index))
+        .map_or(0, |record| match record.status {
+            DownloadStatus::InProgress => 0,
+            DownloadStatus::Completed => 1,
+            DownloadStatus::Failed => 2,
+        })
+}
+
+// "1.2 MB of 4.0 MB" in progress, the final size once complete -- one
+// line the page shows as-is, the same way weglet-security composes the
+// notice's wording rather than handing the page numbers to format.
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_download_size_label_at(
+    state: *const WegletState,
+    index: usize,
+) -> *mut c_char {
+    // SAFETY: contract of as_ref.
+    let label = unsafe { as_ref(state) }
+        .and_then(|state| state.downloads.records.get(index))
+        .map(|record| match record.status {
+            DownloadStatus::InProgress => {
+                weglet_profile::progress_label(record.bytes_downloaded, record.total_bytes)
+            }
+            _ => weglet_profile::format_bytes(record.bytes_downloaded),
+        })
+        .unwrap_or_default();
+    into_c_string(label)
+}
+
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_download_error_message_at(
+    state: *const WegletState,
+    index: usize,
+) -> *mut c_char {
+    // SAFETY: contract of as_ref.
+    let message = unsafe { as_ref(state) }
+        .and_then(|state| state.downloads.records.get(index))
+        .and_then(|record| record.error_message.clone())
+        .unwrap_or_default();
+    into_c_string(message)
+}
+
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_download_started_at_at(
+    state: *const WegletState,
+    index: usize,
+) -> u64 {
+    // SAFETY: contract of as_ref.
+    unsafe { as_ref(state) }
+        .and_then(|state| state.downloads.records.get(index))
+        .map_or(0, |record| record.started_at)
+}
+
+// The file's own path on disk, for "reveal in folder" and "open".
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_download_path_at(
+    state: *const WegletState,
+    index: usize,
+) -> *mut c_char {
+    // SAFETY: contract of as_ref.
+    let path = unsafe { as_ref(state) }
+        .and_then(|state| state.downloads.records.get(index))
+        .map(|record| record.path.clone())
+        .unwrap_or_default();
+    into_c_string(path)
+}
+
+// The four calls below mirror content::DownloadItem's own lifecycle:
+// started once, then either progress* any number of times or one of the
+// two terminal calls. The browser process is the caller for all of
+// them -- it owns the real DownloadManager, this only keeps a record of
+// what it reported.
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_download_started(
+    state: *mut WegletState,
+    url: *const c_char,
+    path: *const c_char,
+) {
+    // SAFETY: contract of as_mut and str_from_c.
+    let Some(state) = (unsafe { as_mut(state) }) else {
+        return;
+    };
+    let (Some(url), Some(path)) = (unsafe { str_from_c(url) }, unsafe { str_from_c(path) })
+    else {
+        return;
+    };
+    state.downloads.started(url, std::path::Path::new(path));
+    state.persist_downloads();
+}
+
+// `total_bytes` is passed as -1 when the server sent no Content-Length.
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_download_progress(
+    state: *mut WegletState,
+    url: *const c_char,
+    bytes_downloaded: u64,
+    total_bytes: i64,
+) {
+    // SAFETY: contract of as_mut and str_from_c.
+    let Some(state) = (unsafe { as_mut(state) }) else {
+        return;
+    };
+    let Some(url) = (unsafe { str_from_c(url) }) else {
+        return;
+    };
+    let total = (total_bytes >= 0).then_some(total_bytes as u64);
+    if state.downloads.update_progress(url, bytes_downloaded, total) {
+        state.persist_downloads();
+    }
+}
+
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_download_completed(
+    state: *mut WegletState,
+    url: *const c_char,
+    size_bytes: u64,
+) {
+    // SAFETY: contract of as_mut and str_from_c.
+    let Some(state) = (unsafe { as_mut(state) }) else {
+        return;
+    };
+    let Some(url) = (unsafe { str_from_c(url) }) else {
+        return;
+    };
+    if state.downloads.mark_completed(url, size_bytes) {
+        state.persist_downloads();
+    }
+}
+
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_download_failed(
+    state: *mut WegletState,
+    url: *const c_char,
+    message: *const c_char,
+) {
+    // SAFETY: contract of as_mut and str_from_c.
+    let Some(state) = (unsafe { as_mut(state) }) else {
+        return;
+    };
+    let (Some(url), Some(message)) = (unsafe { str_from_c(url) }, unsafe { str_from_c(message) })
+    else {
+        return;
+    };
+    if state.downloads.mark_failed(url, message.to_string()) {
+        state.persist_downloads();
+    }
+}
+
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_clear_download_history(state: *mut WegletState) {
+    // SAFETY: contract of as_mut.
+    let Some(state) = (unsafe { as_mut(state) }) else {
+        return;
+    };
+    state.downloads.clear();
+    state.persist_downloads();
+}
+
+// ---------------------------------------------------------------------
+// Threat feed
+// ---------------------------------------------------------------------
+
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_threat_feed_enabled(state: *const WegletState) -> bool {
+    // SAFETY: contract of as_ref.
+    unsafe { as_ref(state) }.is_some_and(|state| state.settings.threat_feed_enabled)
+}
+
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_set_threat_feed_enabled(state: *mut WegletState, on: bool) {
+    // SAFETY: contract of as_mut.
+    let Some(state) = (unsafe { as_mut(state) }) else {
+        return;
+    };
+    state.settings.threat_feed_enabled = on;
+    state.persist_settings();
+}
+
+// ---------------------------------------------------------------------
+// Favicons
+// ---------------------------------------------------------------------
+
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_favicons_enabled(state: *const WegletState) -> bool {
+    // SAFETY: contract of as_ref.
+    unsafe { as_ref(state) }.is_some_and(|state| state.settings.favicons_enabled)
+}
+
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_set_favicons_enabled(state: *mut WegletState, on: bool) {
+    // SAFETY: contract of as_mut.
+    let Some(state) = (unsafe { as_mut(state) }) else {
+        return;
+    };
+    state.settings.favicons_enabled = on;
+    state.persist_settings();
+}
+
+// Whether the URL matches a known-phishing indicator. Off entirely when
+// the setting is off -- checked here rather than left to the caller, so
+// there is exactly one place that can disagree with the toggle.
+//
+// `title` and `reason` may each be null; a non-null one is always
+// written, empty when the answer is false. Shaped like
+// weglet_is_url_blocked for the same reason: the notice page renders
+// whatever wording it is handed.
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_is_known_phishing(
+    state: *const WegletState,
+    url: *const c_char,
+    title: *mut *mut c_char,
+    reason: *mut *mut c_char,
+) -> bool {
+    let write = |slot: *mut *mut c_char, value: &str| {
+        if !slot.is_null() {
+            // SAFETY: contract of the caller -- a non-null slot is
+            // writable.
+            unsafe { *slot = into_c_string(value.to_string()) };
+        }
+    };
+
+    // SAFETY: contract of as_ref and str_from_c.
+    let matched = (unsafe { as_ref(state) }).is_some_and(|state| {
+        state.settings.threat_feed_enabled
+            && (unsafe { str_from_c(url) }).is_some_and(weglet_security::is_known_phishing_now)
+    });
+
+    if matched {
+        write(title, weglet_security::KNOWN_PHISHING_TITLE);
+        write(reason, weglet_security::KNOWN_PHISHING_REASON);
+    } else {
+        write(title, "");
+        write(reason, "");
+    }
+    matched
+}
+
+// `body` is the feed's raw text, already downloaded by the browser (see
+// threat_feed.rs for why the fetch itself isn't here). On success,
+// replaces the live indicator set and the persisted cache; on failure,
+// leaves both standing and just marks the cache's failure flag, so a
+// broken feed doesn't erase yesterday's good one.
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_apply_threat_feed(
+    state: *mut WegletState,
+    body: *const c_char,
+) -> bool {
+    // SAFETY: contract of as_mut and str_from_c.
+    let Some(state) = (unsafe { as_mut(state) }) else {
+        return false;
+    };
+    let Some(body) = (unsafe { str_from_c(body) }) else {
+        return false;
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    match weglet_security::parse_feed(body) {
+        Ok(parsed) => {
+            weglet_security::set_live_hashes(parsed.hashes.clone());
+            state.threat_feed.hashes = parsed.hashes.into_iter().collect();
+            state.threat_feed.source_count = parsed.source_count;
+            state.threat_feed.updated_at = now;
+            state.threat_feed.last_update_failed = false;
+            state.persist_threat_feed();
+            true
+        }
+        Err(_) => {
+            state.threat_feed.last_update_failed = true;
+            state.persist_threat_feed();
+            false
+        }
+    }
+}
+
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_threat_feed_updated_at(state: *const WegletState) -> u64 {
+    // SAFETY: contract of as_ref.
+    unsafe { as_ref(state) }.map_or(0, |state| state.threat_feed.updated_at)
+}
+
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_threat_feed_last_update_failed(state: *const WegletState) -> bool {
+    // SAFETY: contract of as_ref.
+    unsafe { as_ref(state) }.is_some_and(|state| state.threat_feed.last_update_failed)
+}
+
+// ---------------------------------------------------------------------
 // Settings: search
 // ---------------------------------------------------------------------
 
-// "duckduckgo" | "google" | "bing" | "custom". A string rather than an int:
-// the settings page has to display and compare it, and a string it can log
-// unrecognised is safer than an int it would have to guess the meaning of.
+// "duckduckgo" | "google" | "bing" | "custom". A string rather than an
+// int: the settings page has to display and compare it.
 #[doc = safety_doc!()]
 #[no_mangle]
 pub unsafe extern "C" fn weglet_search_engine(state: *const WegletState) -> *mut c_char {
@@ -801,9 +1301,8 @@ pub unsafe extern "C" fn weglet_search_engine(state: *const WegletState) -> *mut
 }
 
 
-// False for an id the browser does not recognise, which is what a settings
-// page from a newer version sending a value this one does not know looks
-// like -- the setting is left as it was rather than reset to a default.
+// False for an id the browser does not recognise, which leaves the
+// setting as it was rather than resetting it.
 #[doc = safety_doc!()]
 #[no_mangle]
 pub unsafe extern "C" fn weglet_set_search_engine(
@@ -818,9 +1317,9 @@ pub unsafe extern "C" fn weglet_set_search_engine(
     let Some(id) = (unsafe { str_from_c(id) }) else {
         return false;
     };
-    // Checked against the table rather than a match arm per engine: the
-    // table is data now, and an id it does not contain is a page sending
-    // something no settings screen offered.
+    // Checked against the table rather than a match arm per engine: an id
+    // it does not contain is a page sending something no settings screen
+    // offered.
     if !weglet_profile::is_known_engine(id) {
         return false;
     }
@@ -829,12 +1328,9 @@ pub unsafe extern "C" fn weglet_set_search_engine(
     true
 }
 
-// The number of engines the settings page can offer. Read this and then
-// weglet_engine_id_at / weglet_engine_label_at for 0..count -- the engine
-// list lives in weglet-profile's data/engines.toml, and this is what lets
-// the settings page build its own list from it instead of holding a
-// second copy. "custom" is not in it: it is not a choice on the list, it
-// is what the template box means.
+// The number of engines the settings page can offer; read it, then
+// weglet_engine_id_at / weglet_engine_label_at for 0..count. "custom" is
+// not in the list -- it is what the template box means.
 #[no_mangle]
 pub extern "C" fn weglet_engine_count() -> usize {
     weglet_profile::engines().len()
@@ -872,9 +1368,7 @@ pub unsafe extern "C" fn weglet_custom_search_url(state: *const WegletState) -> 
 }
 
 // Accepted even when it will not validate as a template yet: the user is
-// often mid-edit, and rejecting every keystroke that is not yet a complete
-// %s URL would make the field impossible to type into. Validated instead at
-// the point it is used, in weglet_omnibox_resolve.
+// often mid-edit. Validated where it is used, in weglet_omnibox_resolve.
 #[doc = safety_doc!()]
 #[no_mangle]
 pub unsafe extern "C" fn weglet_set_custom_search_url(
@@ -928,7 +1422,7 @@ pub unsafe extern "C" fn weglet_accent_color(state: *const WegletState) -> *mut 
     into_c_string(color)
 }
 
-// False for anything that is not #RRGGBB. The colour is never left as
+// False for anything that is not #RRGGBB, so the colour is never left as
 // something the UI cannot turn into a swatch.
 #[doc = safety_doc!()]
 #[no_mangle]
@@ -992,6 +1486,39 @@ pub unsafe extern "C" fn weglet_set_address_bar_shape(
     true
 }
 
+// A BCP-47-ish code such as "en" or "ru". Not an enum on this side of the
+// FFI either -- see weglet_profile::Settings::language for why.
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_language(state: *const WegletState) -> *mut c_char {
+    // SAFETY: contract of as_ref.
+    let language = unsafe { as_ref(state) }
+        .map(|state| state.settings.language.clone())
+        .unwrap_or_else(|| "en".to_string());
+    into_c_string(language)
+}
+
+#[doc = safety_doc!()]
+#[no_mangle]
+pub unsafe extern "C" fn weglet_set_language(
+    state: *mut WegletState,
+    language: *const c_char,
+) -> bool {
+    // SAFETY: contract of as_mut.
+    let Some(state) = (unsafe { as_mut(state) }) else {
+        return false;
+    };
+    // SAFETY: contract of str_from_c.
+    let Some(language) = (unsafe { str_from_c(language) }) else {
+        return false;
+    };
+    if !state.settings.set_language(language) {
+        return false;
+    }
+    state.persist_settings();
+    true
+}
+
 // ---------------------------------------------------------------------
 // Settings: blocked hosts
 // ---------------------------------------------------------------------
@@ -1018,8 +1545,8 @@ pub unsafe extern "C" fn weglet_blocked_host_at(
 }
 
 // Canonicalised before storing -- see weglet_security::canonical_host --
-// so "EXAMPLE.com." and "example.com" end up as the one entry rather than
-// two that silently disagree about whether the site is blocked.
+// so "EXAMPLE.com." and "example.com" are one entry, not two that
+// disagree about whether the site is blocked.
 #[doc = safety_doc!()]
 #[no_mangle]
 pub unsafe extern "C" fn weglet_block_host(
@@ -1062,26 +1589,8 @@ pub unsafe extern "C" fn weglet_unblock_host(state: *mut WegletState, index: usi
 // Settings and session
 // ---------------------------------------------------------------------
 
-#[doc = safety_doc!()]
-#[no_mangle]
-pub unsafe extern "C" fn weglet_terms_accepted(state: *const WegletState) -> bool {
-    // SAFETY: contract of as_ref.
-    unsafe { as_ref(state) }.is_some_and(|state| state.settings.terms_accepted)
-}
-
-#[doc = safety_doc!()]
-#[no_mangle]
-pub unsafe extern "C" fn weglet_accept_terms(state: *mut WegletState) {
-    // SAFETY: contract of as_mut.
-    if let Some(state) = unsafe { as_mut(state) } {
-        state.settings.terms_accepted = true;
-        state.persist_settings();
-    }
-}
-
-// Writes the session to disk. Returns false when there was nothing to
-// write to or the write failed -- the caller logs it, because losing the
-// open tabs silently is how a user finds out the hard way.
+// Writes the session to disk. False when there was nowhere to write or
+// the write failed; the caller logs it.
 #[doc = safety_doc!()]
 #[no_mangle]
 pub unsafe extern "C" fn weglet_save_session(state: *const WegletState) -> bool {
@@ -1121,10 +1630,9 @@ pub unsafe extern "C" fn weglet_save_session(state: *const WegletState) -> bool 
     session.save(&paths.session_file()).is_ok()
 }
 
-// Reads the four optional files a profile may carry. Errors are dropped
-// on purpose: weglet_state_new has no way to report them and no caller
-// that could act on one. What a user gets for a malformed file is the
-// built-in list, which is the safe answer.
+// Reads the four optional files a profile may carry. Errors are dropped:
+// weglet_state_new has no way to report them, and a malformed file leaves
+// the built-in list standing.
 fn load_overrides(paths: &Paths) {
     if let Ok(text) = std::fs::read_to_string(paths.blocklist_file()) {
         weglet_security::set_blocklist_override(&text);
@@ -1141,55 +1649,91 @@ fn load_overrides(paths: &Paths) {
 }
 
 impl WegletState {
-    // Marks settings as needing a write. Does not touch the disk: see
-    // `settings_dirty`.
+    // Marks settings as needing a write. Does not touch the disk.
     fn persist_settings(&mut self) {
         self.settings_dirty = true;
     }
 
-    fn flush_settings(&mut self) -> bool {
-        if !self.settings_dirty {
-            return true;
-        }
-        let Some(paths) = &self.paths else {
+    fn persist_bookmarks(&mut self) {
+        self.bookmarks_dirty = true;
+    }
+
+    fn persist_history(&mut self) {
+        self.history_dirty = true;
+    }
+
+    fn persist_downloads(&mut self) {
+        self.downloads_dirty = true;
+    }
+
+    fn persist_threat_feed(&mut self) {
+        self.threat_feed_dirty = true;
+    }
+
+    // Every dirty store, each independent: one failing to write does not
+    // stop the others, and each stays dirty on its own failure so the
+    // next flush retries just that one.
+    fn flush_all(&mut self) -> bool {
+        let Some(paths) = self.paths.clone() else {
             // Nowhere to write. Left dirty rather than cleared, so a
-            // later call still reports the failure instead of claiming
-            // the settings are safe.
-            return false;
+            // later call still reports the failure.
+            return !(self.settings_dirty
+                || self.bookmarks_dirty
+                || self.history_dirty
+                || self.downloads_dirty
+                || self.threat_feed_dirty);
         };
-        match self.settings.save(&paths.settings_file()) {
-            Ok(()) => {
-                self.settings_dirty = false;
-                true
+        let mut ok = true;
+
+        if self.settings_dirty {
+            match self.settings.save(&paths.settings_file()) {
+                Ok(()) => self.settings_dirty = false,
+                Err(_) => ok = false,
             }
-            // Left dirty on failure so the next flush retries. The caller
-            // reports it -- a settings file that silently stops being
-            // written looks exactly like one that is being written.
-            Err(_) => false,
         }
+        if self.bookmarks_dirty {
+            match self.bookmarks.save(&paths.bookmarks_file()) {
+                Ok(()) => self.bookmarks_dirty = false,
+                Err(_) => ok = false,
+            }
+        }
+        if self.history_dirty {
+            match self.history.save(&paths.history_file()) {
+                Ok(()) => self.history_dirty = false,
+                Err(_) => ok = false,
+            }
+        }
+        if self.downloads_dirty {
+            match self.downloads.save(&paths.downloads_file()) {
+                Ok(()) => self.downloads_dirty = false,
+                Err(_) => ok = false,
+            }
+        }
+        if self.threat_feed_dirty {
+            match self.threat_feed.save(&paths.threat_feed_file()) {
+                Ok(()) => self.threat_feed_dirty = false,
+                Err(_) => ok = false,
+            }
+        }
+        ok
     }
 }
 
-// Writes any pending settings change. False when there was something to
-// write and it could not be written.
-//
-// Called by the browser on a timer and again at shutdown; nothing else in
-// this file touches the disk for settings. Cheap and a no-op when nothing
-// changed, so calling it often costs nothing.
+// Writes every pending change -- settings, bookmarks, history, downloads,
+// the threat-feed cache. False when something needed writing and could
+// not be written. Called on a timer and at shutdown; a no-op when
+// nothing changed.
 #[doc = safety_doc!()]
 #[no_mangle]
 pub unsafe extern "C" fn weglet_flush_settings(state: *mut WegletState) -> bool {
     // SAFETY: contract of as_mut.
-    unsafe { as_mut(state) }.is_some_and(|state| state.flush_settings())
+    unsafe { as_mut(state) }.is_some_and(|state| state.flush_all())
 }
 
-// True when settings have changed and not yet been written. Lets the
-// browser skip a timer tick rather than call across the boundary for
-// nothing.
+// True when settings have changed and not yet been written, so the
+// browser can skip a timer tick.
 // How often the browser should call weglet_flush_settings and
-// weglet_save_session, in seconds. From the profile, clamped on load, so
-// a machine with a slow disk or one that gets closed abruptly can be
-// tuned without a rebuild.
+// weglet_save_session, in seconds. From the profile, clamped on load.
 #[doc = safety_doc!()]
 #[no_mangle]
 pub unsafe extern "C" fn weglet_settings_flush_seconds(state: *const WegletState) -> u64 {

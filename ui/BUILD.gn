@@ -1,7 +1,5 @@
 # Copyright 2026 Weglet - Licensed under Apache 2.0
 #
-# weglet/ui/BUILD.gn
-#
 # Tokens, TypeScript and the embedded pages. See build_ui.py.
 
 _gen_dir = "$target_gen_dir"
@@ -13,14 +11,15 @@ _contract_header = "$_gen_dir/generated_contract.h"
 action("build_ui") {
   script = "build_ui.py"
 
-  # Coarse on purpose: the depfile below is generated from the real inputs,
-  # so adding a page or a .ts file does not mean editing a list here.
+  # Coarse on purpose: the depfile below is generated from the real
+  # inputs, so adding a page or a .ts file does not mean editing a list.
   inputs = [
     # The shared build helpers both this and the other scripts import.
     "//weglet/build_support.py",
     "build_ui.py",
     "generate_tokens.py",
     "generate_contract.py",
+    "generate_i18n.py",
     "tokens.json",
     "contract.json",
     "tsconfig.json",
@@ -56,9 +55,8 @@ source_set("ui") {
     _source,
   ]
 
-  # The generated files live under root_gen_dir, and the include in the
-  # source says "weglet/ui/generated_resources.h" -- so root_gen_dir has to
-  # be on the include path.
+  # The include in the source says "weglet/ui/generated_resources.h", so
+  # root_gen_dir has to be on the include path.
   public_configs = [ ":ui_config" ]
   deps = [ ":build_ui" ]
 }

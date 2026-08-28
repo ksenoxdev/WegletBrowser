@@ -1,16 +1,11 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// weglet/ui/src/icons.ts
+// Tabler Icons (MIT, tabler.io/icons), as path data.
 //
-// Tabler Icons (MIT, tabler.io/icons).
-//
-// Inlined rather than fetched: this page is served from chrome://weglet/,
-// whose CSP has no network source, and a desktop browser asking a CDN for
-// its own icons would flash blank on every open besides.
-//
-// Stored as the path data itself rather than as SVG markup, so building an
-// icon is element creation and not string parsing -- and so there is no
-// innerHTML anywhere in this codebase to make the next one look normal.
+// Inlined rather than fetched: chrome://weglet/'s CSP has no network
+// source. Stored as path data rather than SVG markup, so building an icon
+// is element creation and not string parsing -- and there is no innerHTML
+// anywhere in this codebase for the next one to look normal beside.
 
 const PATHS = {
   "arrow-left": ["M5 12l14 0", "M5 12l6 6", "M5 12l6 -6"],
@@ -33,6 +28,7 @@ const PATHS = {
   "settings": ["M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065", "M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"],
   "history": ["M12 8l0 4l2 2", "M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5"],
   "link": ["M9 15l6 -6", "M11 6l.463 -.536a5 5 0 0 1 7.071 7.072l-.534 .464", "M13 18l-.397 .534a5.068 5.068 0 0 1 -7.127 0a4.972 4.972 0 0 1 0 -7.071l.524 -.463"],
+  "shield-check": ["M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3", "M9 12l2 2l4 -4"],
 } as const;
 
 // A wrong name is a compile error, not a console warning at runtime.
@@ -40,15 +36,14 @@ export type IconName = keyof typeof PATHS;
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
-export function icon(name: IconName, size = 18): SVGSVGElement {
+export function icon(name: IconName, size = 18, filled = false): SVGSVGElement {
   const svg = document.createElementNS(SVG_NS, "svg");
   svg.setAttribute("width", String(size));
   svg.setAttribute("height", String(size));
   svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("fill", "none");
-  // currentColor: an icon takes the colour of whatever holds it, so there
-  // is no per-icon colour plumbing and a hovered button tints its icon for
-  // free.
+  // currentColor either way: an icon takes the colour of whatever holds
+  // it, so a hovered (or, filled, an active) button tints it for free.
+  svg.setAttribute("fill", filled ? "currentColor" : "none");
   svg.setAttribute("stroke", "currentColor");
   svg.setAttribute("stroke-width", "2");
   svg.setAttribute("stroke-linecap", "round");
@@ -63,6 +58,6 @@ export function icon(name: IconName, size = 18): SVGSVGElement {
 }
 
 // Replaces an element's contents with the named icon.
-export function setIcon(el: Element, name: IconName, size = 18): void {
-  el.replaceChildren(icon(name, size));
+export function setIcon(el: Element, name: IconName, size = 18, filled = false): void {
+  el.replaceChildren(icon(name, size, filled));
 }

@@ -1,23 +1,12 @@
 #!/usr/bin/env python3
 # Copyright 2026 Weglet - Licensed under Apache 2.0
 #
-# weglet/ui/build_ui.py
+# Builds the interface and embeds it into the binary: tokens and contract
+# from JSON, then tsc over src/, then every page, style, script and font
+# written into a generated C++ file as byte arrays.
 #
-# Builds the interface and embeds it into the binary.
-#
-# Three steps, in order:
-#   1. generate_tokens.py turns tokens.json into CSS, TypeScript and a
-#      C++ header. The CSS carries the @font-face rules; the font files
-#      themselves are embedded in step 3 alongside the pages.
-#   2. Chromium's vendored TypeScript compiles src/*.ts to ES modules.
-#      Vendored, so there is no npm install and no node_modules here.
-#   3. The pages, styles and compiled scripts are written into a generated
-#      C++ file as byte arrays.
-#
-# Step 3 rather than grit because the set of files is small and entirely
-# ours: a generated array is one script we control, where grit would be a
-# .grd file, a resource-id header and a second packing step to keep in
-# step with it.
+# A generated array rather than grit, because the set of files is small
+# and entirely ours.
 
 import argparse
 import json
@@ -25,14 +14,13 @@ import os
 import subprocess
 import sys
 
-# weglet/build_support.py -- find_node_toolchain and write_depfile, which
-# every build script here needs and which used to exist twice.
+# find_node_toolchain and write_depfile.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import build_support  # noqa: E402
 
-# Extension -> what the protocol handler should answer with. A file whose
-# type is not here is a mistake rather than something to serve as bytes:
-# guessing a MIME type is how a page ends up rendered as plain text.
+# Extension -> what the protocol handler answers with. A file whose type is
+# not here is a mistake: guessing a MIME type is how a page ends up
+# rendered as plain text.
 MIME_TYPES = {
     ".html": "text/html",
     ".css": "text/css",
@@ -40,10 +28,8 @@ MIME_TYPES = {
     ".json": "application/json",
     ".svg": "image/svg+xml",
     ".png": "image/png",
-    # Only what the pages actually serve. .ttf is deliberately absent:
-    # content's own WebUIDataSourceImpl::GetMimeType has no entry for it
-    # and falls through to text/html, so a .ttf here would be embedded
-    # successfully and served as the wrong type. woff2 is in its table.
+    # .ttf is absent on purpose: WebUIDataSourceImpl::GetMimeType has no
+    # entry for it and falls through to text/html. woff2 is in its table.
     ".woff2": "font/woff2",
 }
 
@@ -128,10 +114,9 @@ def embed(files: dict[str, bytes], header_out: str, source_out: str) -> None:
         data = files[path]
         symbol = f"k{c_identifier(path)}"
         octets = ", ".join(f"0x{byte:02x}" for byte in data)
-        # uint8_t, not char: char is signed here, and a font file has bytes
-        # above 127 that do not fit in it -- which is a narrowing error, not
-        # a warning. Reinterpreted back to char at the string_view below,
-        # where the width is what matters and the sign is not.
+        # uint8_t, not char: char is signed here, and a font file has
+        # bytes above 127, which is a narrowing error rather than a
+        # warning.
         source += [
             f"// {path} ({len(data)} bytes)",
             f"constexpr uint8_t {symbol}[] = {{{octets}}};",
@@ -239,14 +224,10 @@ def main() -> int:
         ]
     )
 
-    # 1b. Contract: message names, page paths and internal addresses. The
-    #     TypeScript side (contract.ts) lands with the sources so
-    #     protocol.ts's import resolves, same as tokens.ts above. The C++
-    #     header lands in gen/ for the browser process; the Rust output is
-    #     not requested here at all -- weglet-core gets its own copy
-    #     through rust/build_rust.py, which runs independently of this
-    #     script and has to work under a plain `cargo build` with no GN
-    #     action having run first.
+    # 1b. Contract. contract.ts lands with the sources so protocol.ts's
+    #     import resolves; the C++ header lands in gen/. The Rust output is
+    #     not requested here -- weglet-core gets its copy through
+    #     rust/build_rust.py.
     run(
         [
             sys.executable,
@@ -260,11 +241,24 @@ def main() -> int:
         ]
     )
 
+    # 1c. i18n. Same reasoning as contract.ts: lands with the sources so
+    #     i18n.ts's import resolves.
+    run(
+        [
+            sys.executable,
+            os.path.join(ui_dir, "generate_i18n.py"),
+            "--i18n-dir",
+            os.path.join(ui_dir, "i18n"),
+            "--ts",
+            os.path.join(ui_dir, "src", "generated_i18n.ts"),
+        ]
+    )
+
     # 2. TypeScript.
     compile_typescript(ui_dir, scripts_dir, os.path.abspath(args.chromium_root))
 
-    # 3. Embed. Static pages first so a generated file with the same name
-    #    would be caught as a duplicate rather than silently winning.
+    # 3. Embed. Static pages first, so a generated file with the same name
+    #    is caught as a duplicate rather than silently winning.
     files = collect(
         [
             os.path.join(ui_dir, "pages"),
@@ -278,13 +272,13 @@ def main() -> int:
     embed(files, args.header, args.source)
 
     if args.depfile:
-        # Every page, script, font and generator input: a change to any of
-        # them has to rebuild the embedded resource set.
+        # A change to any page, script, font or generator input has to
+        # rebuild the embedded resource set.
         build_support.write_depfile(
             args.depfile,
             args.source,
             ui_dir,
-            lambda name: os.path.splitext(name)[1] in (*MIME_TYPES, ".ts", ".py")
+            lambda name: os.path.splitext(name)[1] in (*MIME_TYPES, ".ts", ".py", ".txt")
             or name in ("tokens.json", "tsconfig.json", "contract.json"),
         )
     return 0

@@ -1,30 +1,21 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// rust/weglet-url/src/host.rs
-
-// The host part of an absolute URL, or None if there is no authority.
-//
-// Not a URL parser: it finds the authority and trims it. Everything that
-// affects a security decision uses the `url` crate, which implements the
-// actual standard.
+// The host of an absolute URL. Not a parser: it finds the authority and
+// trims it.
 pub fn host(url: &str) -> Option<&str> {
     let (_, rest) = url.split_once("://")?;
 
-    // A backslash ends the authority exactly like a slash. The URL
-    // Standard says so and browsers do it, so "example.com\@evil.com" is
-    // host "example.com" here too -- reading it as "example.com\@evil.com"
-    // would show a host the browser is not actually connected to.
+    // A backslash ends the authority like a slash, so
+    // "example.com\@evil.com" is host "example.com".
     let authority = rest.split(['/', '\\', '?', '#']).next()?;
 
-    // rsplit, not split: userinfo comes BEFORE the host, so the last
-    // segment is the host. "user@example.com" is example.com, and
-    // "google.com@evil.example" is evil.example -- which is the whole
-    // point of stripping it.
+    // rsplit, not split: userinfo comes before the host, so
+    // "google.com@evil.example" is evil.example.
     let authority = authority.rsplit('@').next()?;
 
     let host = if authority.starts_with('[') {
-        // IPv6 literal: the colons inside are part of the address, so
-        // the port can only be after the closing bracket.
+        // IPv6 literal: the colons are part of the address, so the port
+        // can only be after the closing bracket.
         let end = authority.find(']')?;
         &authority[..=end]
     } else {
@@ -34,9 +25,8 @@ pub fn host(url: &str) -> Option<&str> {
     (!host.is_empty()).then_some(host)
 }
 
-// What to show the user when there is no better answer. Falls back to
-// the whole string rather than an empty one: an address bar that goes
-// blank on a URL it cannot parse is worse than one showing something odd.
+// Falls back to the whole string: an address bar that goes blank on a URL
+// it cannot parse is worse than one showing something odd.
 pub fn display_host(url: &str) -> &str {
     host(url).unwrap_or(url)
 }

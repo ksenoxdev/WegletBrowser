@@ -1,6 +1,6 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// rust/weglet-profile/src/settings.rs
+// The profile's settings: search engines, shortcuts, block list, theme.
 
 use std::path::Path;
 
@@ -11,19 +11,13 @@ use serde::{Deserialize, Serialize};
 use crate::Error;
 
 // The built-in engines, as data. See data/engines.toml for the format.
-//
 // include_str! rather than a file read at startup: Weglet ships one
-// executable and nothing beside it. What this buys over the enum it
-// replaces is that adding an engine is adding three lines to a table
-// instead of adding an enum variant, an arm in query_url, an arm in two
-// id mappings and an entry in a const array on the FFI side -- five
-// edits in two crates for one engine.
+// executable and nothing beside it.
 const BUILT_IN_ENGINES: &str = include_str!("../data/engines.toml");
 
 // The id the user's own template is stored under. Not an engine in the
-// table and rejected if one tries to be: the template lives in
-// Settings::custom_search_url, and two places claiming the same id would
-// mean the settings page offering a choice that overwrites the user's.
+// table, and rejected if one tries to be: the template lives in
+// Settings::custom_search_url.
 pub const CUSTOM_ENGINE_ID: &str = "custom";
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -106,9 +100,8 @@ pub fn is_known_engine(id: &str) -> bool {
     id == CUSTOM_ENGINE_ID || engines().iter().any(|engine| engine.id == id)
 }
 
-// None when there is nothing to search with: an unknown id, or Custom
-// with no usable template. The caller decides what that means rather than
-// being handed a URL that goes nowhere useful.
+// None when there is nothing to search with: an unknown id, or Custom with
+// no usable template.
 pub fn query_url(id: &str, query: &str, custom_template: &str) -> Option<String> {
     let escaped = percent_encode_query(query);
     let template = if id == CUSTOM_ENGINE_ID {
@@ -126,10 +119,9 @@ pub fn query_url(id: &str, query: &str, custom_template: &str) -> Option<String>
     Some(template.replacen("%s", &escaped, 1))
 }
 
-// A template has to have exactly one %s and has to be an address the engine
-// can navigate to -- an http(s) URL with a host. Without the host check a
-// template of "%s" would "work" by turning every search into a navigation to
-// whatever the user typed, silently changing what search does.
+// A template needs exactly one %s and has to be an http(s) URL with a
+// host. Without the host check, "%s" would turn every search into a
+// navigation to whatever the user typed.
 fn is_valid_custom_template(template: &str) -> bool {
     if template.matches("%s").count() != 1 {
         return false;
@@ -140,10 +132,9 @@ fn is_valid_custom_template(template: &str) -> bool {
     (url.scheme() == "http" || url.scheme() == "https") && url.host().is_some()
 }
 
-// Written out rather than pulling in a crate: this is the only place the
-// browser percent-encodes anything, and the rule is small enough to read.
-// Unreserved set per RFC 3986, everything else escaped -- including "+",
-// which a receiver would otherwise decode as a space.
+// Written out rather than pulling in a crate. Unreserved set per RFC 3986,
+// everything else escaped -- including "+", which a receiver would
+// otherwise decode as a space.
 fn percent_encode_query(query: &str) -> String {
     let mut out = String::with_capacity(query.len());
     for byte in query.as_bytes() {
@@ -158,10 +149,9 @@ fn percent_encode_query(query: &str) -> String {
     out
 }
 
-// A pinned site on the new tab page. Ordered, and identified by position:
-// the dock is a list the user arranges, not a set of named things.
-// Default so serde(default) can fill a field the file omitted -- a
-// half-written entry becomes an empty one rather than failing the whole load.
+// A pinned site on the new tab page, identified by position: the dock is
+// a list the user arranges. Default so a half-written entry becomes an
+// empty one rather than failing the whole load.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "kebab-case")]
 pub struct Shortcut {
@@ -173,30 +163,31 @@ pub struct Shortcut {
 #[serde(default, rename_all = "kebab-case")]
 pub struct Settings {
     // How often pending settings and the open tabs reach the disk, in
-    // seconds. Here rather than as constants in the browser process
-    // because they are the one pair of numbers whose right value depends
-    // on the machine: a slow disk wants them larger, a laptop that gets
-    // closed abruptly wants them smaller, and neither is knowable from
-    // here.
-    //
-    // Clamped on load -- zero would mean writing on every tick.
+    // seconds. In the profile because the right value depends on the
+    // machine. Clamped on load -- zero would write on every tick.
     pub settings_flush_seconds: u64,
     pub session_save_seconds: u64,
 
-    // The engine's id from data/engines.toml, or "custom". A String and
-    // not an enum: the set of engines is data now, and an enum would put
-    // it back in the code.
+    // The engine's id from data/engines.toml, or "custom". A String, not
+    // an enum: the set of engines is data.
     pub search_engine: String,
-    // Only meaningful when search_engine is Custom, but kept even when it is
-    // not: switching to Custom and back should not lose what the user typed.
+    // Kept even when the engine is not Custom: switching away and back
+    // should not lose what the user typed.
     pub custom_search_url: String,
     pub restore_session: bool,
     pub blocked_hosts: Vec<String>,
     pub shortcuts: Vec<Shortcut>,
     pub accent_color: String,
     pub address_bar_shape: AddressBarShape,
-    // Until this is true the only page that opens is the terms screen.
-    pub terms_accepted: bool,
+    pub threat_feed_enabled: bool,
+    // Off by default: fetching a site's icon is itself a request to that
+    // site, before the user has typed or clicked anything else. See
+    // docs/security.md.
+    pub favicons_enabled: bool,
+    // A BCP-47-ish code ("en", "ru"). Not an enum: the known set is
+    // data, in ui/i18n/*.txt, not a list this crate would have to keep
+    // in step with.
+    pub language: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -208,27 +199,21 @@ pub enum AddressBarShape {
 }
 
 // The block list is walked for every request the blocker sees, so an
-// unbounded one from a hand-edited file is a performance cliff rather
-// than a feature.
+// unbounded one is a performance cliff.
 const MAX_BLOCKED_HOSTS: usize = 10_000;
 
-// Both are a compromise between losing work and writing constantly. The
-// bounds are what keeps a hand-edited or corrupt file from turning either
-// into a busy loop or into "never".
+// Bounded so a hand-edited or corrupt file cannot make either a busy loop
+// or "never".
 const DEFAULT_SETTINGS_FLUSH_SECONDS: u64 = 5;
 const DEFAULT_SESSION_SAVE_SECONDS: u64 = 30;
 const MIN_INTERVAL_SECONDS: u64 = 1;
 const MAX_INTERVAL_SECONDS: u64 = 3600;
 
-// What the dock has room for. Past this the tiles have nowhere to go, so a
-// longer list is a list with invisible entries.
+// What the dock has room for. Past this the tiles are invisible.
 pub const MAX_SHORTCUTS: usize = 8;
 
-// The default accent lives in weglet/ui/tokens.json and is generated into
-// generated_defaults.rs -- one value, one source. It used to be a literal
-// here that build_rust.py kept honest by reading this file with a regular
-// expression, which is Python parsing Rust to notice a disagreement it
-// could not fix.
+// The default accent lives in tokens.json and is generated into
+// generated_defaults.rs.
 include!("generated_defaults.rs");
 
 impl Default for Settings {
@@ -243,16 +228,17 @@ impl Default for Settings {
             shortcuts: Vec::new(),
             accent_color: DEFAULT_ACCENT.to_string(),
             address_bar_shape: AddressBarShape::Pill,
-            terms_accepted: false,
+            threat_feed_enabled: true,
+            favicons_enabled: false,
+            language: "en".to_string(),
         }
     }
 }
 
 impl Settings {
-    // A missing file is not an error -- that is a first run. Anything else
-    // is returned so the caller can say so out loud instead of silently
-    // substituting defaults and overwriting the user's real settings on
-    // the next save.
+    // A missing file is a first run. Anything else is returned, so the
+    // caller can say so rather than silently substituting defaults and
+    // overwriting real settings on the next save.
     pub fn load(path: &Path) -> Result<Self, Error> {
         let text = match std::fs::read_to_string(path) {
             Ok(text) => text,
@@ -283,8 +269,8 @@ impl Settings {
         crate::atomic::write(path, &text)
     }
 
-    // Applied on load, not on save, so an oversized file is only rewritten
-    // smaller once the user actually changes something.
+    // Applied on load, not on save, so an oversized file is rewritten
+    // smaller only once the user changes something.
     fn clamp(&mut self) {
         if self.blocked_hosts.len() > MAX_BLOCKED_HOSTS {
             self.blocked_hosts.truncate(MAX_BLOCKED_HOSTS);
@@ -292,15 +278,13 @@ impl Settings {
         if self.shortcuts.len() > MAX_SHORTCUTS {
             self.shortcuts.truncate(MAX_SHORTCUTS);
         }
-        // A colour that will not parse as one is the same as one nobody
-        // chose: fall back rather than hand the UI a string it cannot turn
-        // into a swatch.
+        // A colour that will not parse is the same as one nobody chose.
         if !is_valid_hex_color(&self.accent_color) {
             self.accent_color = DEFAULT_ACCENT.to_string();
         }
-        // An id that is not in the table any more -- an override removed
-        // it, or the file was edited. Reset rather than kept: a stored
-        // preference nothing can act on is a search box that does nothing.
+        // An id no longer in the table -- an override removed it, or the
+        // file was edited. A stored preference nothing can act on is a
+        // search box that does nothing.
         self.settings_flush_seconds = self
             .settings_flush_seconds
             .clamp(MIN_INTERVAL_SECONDS, MAX_INTERVAL_SECONDS);
@@ -310,10 +294,12 @@ impl Settings {
         if !is_known_engine(&self.search_engine) {
             self.search_engine = default_engine_id().to_string();
         }
+        if !is_valid_language_code(&self.language) {
+            self.language = "en".to_string();
+        }
     }
 
-    // Returns false when the dock is full, so the caller can say so rather
-    // than silently dropping it.
+    // False when the dock is full, so the caller can say so.
     pub fn add_shortcut(&mut self, title: &str, url: &str) -> bool {
         if self.shortcuts.len() >= MAX_SHORTCUTS {
             return false;
@@ -335,8 +321,7 @@ impl Settings {
     }
 
     // Index, not identity: the caller sent a position from a list it was
-    // shown, and that list can have changed since. Out of range is a no-op
-    // rather than a panic.
+    // shown, which can have changed. Out of range is a no-op.
     pub fn remove_shortcut(&mut self, index: usize) -> bool {
         if index >= self.shortcuts.len() {
             return false;
@@ -345,14 +330,22 @@ impl Settings {
         true
     }
 
-    // Returns false and leaves the colour unchanged for anything that is not
-    // #RRGGBB, so a malformed value from the page cannot leave the profile
-    // holding a colour nothing can render.
+    // False and unchanged for anything that is not #RRGGBB, so a
+    // malformed value cannot leave the profile holding a colour nothing
+    // can render.
     pub fn set_accent_color(&mut self, color: &str) -> bool {
         if !is_valid_hex_color(color) {
             return false;
         }
         self.accent_color = color.to_string();
+        true
+    }
+
+    pub fn set_language(&mut self, language: &str) -> bool {
+        if !is_valid_language_code(language) {
+            return false;
+        }
+        self.language = language.to_string();
         true
     }
 }
@@ -361,6 +354,17 @@ fn is_valid_hex_color(value: &str) -> bool {
     value.len() == 7
         && value.starts_with('#')
         && value[1..].chars().all(|c| c.is_ascii_hexdigit())
+}
+
+// Shaped, not looked up: this crate does not know the set of languages
+// ui/i18n/*.txt actually has -- an unknown-but-shaped code just falls
+// back to English in the UI, the same as a key missing from a real
+// translation does.
+fn is_valid_language_code(value: &str) -> bool {
+    (2..=8).contains(&value.len())
+        && value
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c == '-')
 }
 
 #[cfg(test)]
@@ -409,14 +413,16 @@ mod tests {
             }],
             accent_color: "#3B82F6".into(),
             address_bar_shape: AddressBarShape::Rounded,
-            terms_accepted: true,
+            threat_feed_enabled: false,
+            favicons_enabled: true,
+            language: "ru".into(),
         };
         settings.save(&path).unwrap();
         assert_eq!(Settings::load(&path).unwrap(), settings);
     }
 
     // An unknown key is a file written by a newer version. Losing the
-    // whole profile over it would be worse than ignoring it.
+    // whole profile over it would be worse.
     #[test]
     fn an_unknown_key_is_ignored() {
         let path = file("unknown");
@@ -427,15 +433,14 @@ mod tests {
     #[test]
     fn a_partial_file_keeps_the_defaults_for_what_is_missing() {
         let path = file("partial");
-        crate::atomic::write(&path, "terms-accepted = true\n").unwrap();
+        crate::atomic::write(&path, "custom-search-url = \"https://example.com\"\n").unwrap();
         let settings = Settings::load(&path).unwrap();
-        assert!(settings.terms_accepted);
+        assert_eq!(settings.custom_search_url, "https://example.com");
         assert_eq!(settings.search_engine, default_engine_id());
         assert!(settings.restore_session);
     }
 
-    // Loud, not silent: the caller has to be able to tell the user rather
-    // than quietly resetting them.
+    // Loud, not silent: the caller has to be able to tell the user.
     #[test]
     fn a_malformed_file_is_an_error() {
         let path = file("malformed");
@@ -476,9 +481,8 @@ mod tests {
             .is_none());
     }
 
-    // A template with no host is not a search engine -- it is a way to turn
-    // every "search" into a navigation to whatever the user typed, which
-    // silently changes what search does.
+    // A template with no host turns every search into a navigation to
+    // whatever the user typed.
     #[test]
     fn a_custom_engine_needs_a_navigable_host() {
         assert!(query_url(CUSTOM_ENGINE_ID, "cats", "javascript:%s").is_none());
@@ -510,14 +514,43 @@ mod tests {
         assert_eq!(settings.accent_color, "#3B82F6");
     }
 
-    // A malformed colour on disk -- from a hand-edited file, or an older
-    // version with a different format -- must not leave the UI holding a
-    // string it cannot turn into a swatch.
+    // A malformed colour on disk must not leave the UI holding a string
+    // it cannot turn into a swatch.
     #[test]
     fn a_malformed_accent_colour_is_replaced_with_the_default_on_load() {
         let path = file("bad-accent");
         crate::atomic::write(&path, "accent-color = \"purple\"\n").unwrap();
         assert_eq!(Settings::load(&path).unwrap().accent_color, DEFAULT_ACCENT);
+    }
+
+    #[test]
+    fn setting_an_invalid_language_is_rejected() {
+        let mut settings = Settings::default();
+        let before = settings.language.clone();
+        assert!(!settings.set_language("!!"));
+        assert_eq!(settings.language, before);
+        assert!(!settings.set_language(""));
+    }
+
+    #[test]
+    fn setting_a_valid_language_is_accepted() {
+        let mut settings = Settings::default();
+        assert!(settings.set_language("ru"));
+        assert_eq!(settings.language, "ru");
+    }
+
+    #[test]
+    fn a_malformed_language_code_is_replaced_with_english_on_load() {
+        let path = file("bad-language");
+        crate::atomic::write(&path, "language = \"Not A Code!\"\n").unwrap();
+        assert_eq!(Settings::load(&path).unwrap().language, "en");
+    }
+
+    #[test]
+    fn a_well_formed_language_code_survives_load() {
+        let path = file("good-language");
+        crate::atomic::write(&path, "language = \"ru\"\n").unwrap();
+        assert_eq!(Settings::load(&path).unwrap().language, "ru");
     }
 
     #[test]
@@ -585,14 +618,12 @@ mod tests {
 
     #[test]
     fn a_query_is_percent_encoded() {
-        // The template argument is unused by every built-in engine, so an
-        // empty one exercises exactly that.
+        // The template argument is unused by every built-in engine.
         assert_eq!(
             query_url("duckduckgo", "rust browser", ""),
             Some("https://duckduckgo.com/?q=rust%20browser".to_string())
         );
-        // Every one of these would change the meaning of the URL if it went
-        // through unescaped.
+        // Every one of these would change the meaning of the URL.
         assert_eq!(
             query_url("google", "a&b=c#d?e", ""),
             Some("https://www.google.com/search?q=a%26b%3Dc%23d%3Fe".to_string())

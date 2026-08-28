@@ -28,6 +28,7 @@
             id="search-bar"
             type="text"
             placeholder="Search or enter address"
+            data-i18n-placeholder="newtab.searchPlaceholder"
             autocomplete="off"
             spellcheck="false"
             aria-label="Search or enter address"
@@ -47,7 +48,7 @@
     </main>
 
     <div class="context-menu" id="shortcut-menu" role="menu">
-      <div class="context-menu-item" id="menu-edit" role="menuitem" tabindex="-1">
+      <div class="context-menu-item" id="menu-edit" role="menuitem" tabindex="-1" data-i18n="newtab.contextEdit">
         Edit
       </div>
       <div
@@ -55,6 +56,7 @@
         id="menu-delete"
         role="menuitem"
         tabindex="-1"
+        data-i18n="newtab.contextDelete"
       >
         Delete
       </div>
@@ -62,20 +64,20 @@
 
     <div class="modal-backdrop" id="shortcut-backdrop">
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-        <h2 id="modal-title">Add shortcut</h2>
+        <h2 id="modal-title" data-i18n="newtab.addShortcutTitle">Add shortcut</h2>
         <label>
-          Name
-          <input id="shortcut-name" type="text" placeholder="My Site" autocomplete="off" />
+          <span data-i18n="newtab.nameLabel">Name</span>
+          <input id="shortcut-name" type="text" placeholder="My Site" data-i18n-placeholder="newtab.namePlaceholder" autocomplete="off" />
         </label>
         <label>
-          Link
+          <span data-i18n="newtab.linkLabel">Link</span>
           <input id="shortcut-url" type="text" placeholder="example.com" autocomplete="off" />
         </label>
         <div class="modal-actions">
-          <button type="button" class="modal-btn cancel" id="shortcut-cancel">
+          <button type="button" class="modal-btn cancel" id="shortcut-cancel" data-i18n="newtab.cancel">
             Cancel
           </button>
-          <button type="button" class="modal-btn confirm" id="shortcut-confirm">
+          <button type="button" class="modal-btn confirm" id="shortcut-confirm" data-i18n="newtab.add">
             Add
           </button>
         </div>

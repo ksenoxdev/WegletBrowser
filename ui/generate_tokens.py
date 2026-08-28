@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 # Copyright 2026 Weglet - Licensed under Apache 2.0
 #
-# weglet/ui/generate_tokens.py
-#
-# Turns tokens.json into the three forms the codebase needs. Run by the
-# build, never by hand -- the generated files are build output and are not
-# checked in, so there is no way for them to drift from the source.
+# tokens.json -> CSS custom properties, a TypeScript module, a C++ header,
+# and the default accent for weglet-profile.
 
 import argparse
 import json
@@ -47,9 +44,8 @@ def css_value(group: str, name: str, value) -> str:
     return str(value)
 
 
-# Colours that exist only as a mix of two others. Kept out of tokens.json
-# because they are not values anybody chooses -- they are derived, and
-# writing them out by hand means two numbers to keep in step.
+# Colours that exist only as a mix of two others. Derived, so writing them
+# into tokens.json would be two numbers to keep in step.
 _DERIVED_CSS = [
     "  /* The hover and pressed tints: the ring colour bled into the field,",
     "     so a hovered control looks lit from within rather than repainted. */",
@@ -79,16 +75,10 @@ def ts_name(group: str, name: str) -> str:
     return parts[0] + "".join(part.capitalize() for part in parts[1:])
 
 
-# Shipped with the binary, not fetched. A browser asking a CDN for its own
-# interface font is a flash of unstyled text and a request the user did not
-# make -- and this one in particular is served from chrome://weglet/, whose
-# CSP has no network source at all, so it could not work anyway.
-#
-# woff2, not ttf, for a reason that is not only size: WebUIDataSourceImpl
-# picks a MIME type from the path and its table has no .ttf in it, so a
-# .ttf was served as text/html. Blink is lenient about font MIME types and
-# it worked anyway, which is the worst kind of working. .woff2 is in that
-# table. It is also about a third of the bytes.
+# Shipped with the binary, not fetched: chrome://weglet/'s CSP has no
+# network source. woff2 rather than ttf because WebUIDataSourceImpl picks
+# a MIME type from the path and has no .ttf entry, so a .ttf was served as
+# text/html and worked anyway, which is the worst kind of working.
 _FONT_FACES = [
     "",
     '@font-face {',
@@ -161,10 +151,9 @@ def write_ts(tokens: dict, out: str) -> None:
     lines.append("")
     lines.append("export type TokenName = keyof typeof tokens;")
 
-    # Channel values for the colours anim.ts interpolates. Generated rather
-    # than written out again, because a triplet copied by hand is the same
-    # number in two places -- and one of these is a mix nobody can recompute
-    # by eye.
+    # Channel values for the colours anim.ts interpolates. Generated
+    # because a triplet copied by hand is the same number in two places,
+    # and one of these is a mix nobody can recompute by eye.
     colours = {name: value for group, name, value in entries(tokens) if group == "color"}
     ring = hex_to_rgb(colours["ring"])
     field = hex_to_rgb(colours["field"])
@@ -224,8 +213,8 @@ def write_header(tokens: dict, out: str) -> None:
         "// Logical pixels, the same unit the CSS in the pages uses. The",
         "// window layer converts to device pixels once, at the boundary.",
     ]
-    # Only the numeric groups. A C++ constant for a hex colour string would
-    # be a colour the C++ side is not the one drawing.
+    # Only the numeric groups: a C++ constant for a hex colour would be a
+    # colour the C++ side is not drawing.
     for group, name, value in entries(tokens):
         if group not in _PIXEL_GROUPS and group not in _MS_GROUPS:
             continue
@@ -276,8 +265,8 @@ def write_rust(tokens: dict, out: str) -> None:
 
 def write(path: str, contents: str) -> None:
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    # Only touch the file when it actually changes: a rewritten timestamp
-    # makes ninja rebuild everything downstream for nothing.
+    # Only touch the file when it changes: a rewritten timestamp makes
+    # ninja rebuild everything downstream.
     if os.path.exists(path):
         with open(path, encoding="utf-8") as handle:
             if handle.read() == contents:
@@ -289,9 +278,8 @@ def write(path: str, contents: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--tokens", required=True)
-    # All optional: build_ui.py wants the CSS, the TypeScript and the C++
-    # header; build_rust.py wants only the Rust one, and asking for it
-    # should not mean writing the other three somewhere to throw away.
+    # All optional: build_ui.py wants the CSS, TypeScript and header;
+    # build_rust.py wants only the Rust one.
     parser.add_argument("--css")
     parser.add_argument("--ts")
     parser.add_argument("--header")
@@ -303,20 +291,12 @@ def main() -> int:
 
     tokens = load(args.tokens)
 
-    # color.accent-solid is the CSS default for the accent, baked in at
-    # build time; accentPresets[0] is the same colour offered as the first
-    # choice in settings, and weglet-profile's DEFAULT_ACCENT (Rust) is the
-    # colour a fresh profile is created with. All three have to be the same
-    # value -- a profile whose accent setting does not match the swatch its
-    # own CSS renders by default would be a visible bug on first run.
-    #
-    # They cannot fully collapse into one generated fact: the CSS one is
-    # compiled into every page regardless of the user's profile, and Rust's
-    # is a compile-time Rust constant a running profile can later diverge
-    # from on purpose (the user picked a different colour). What can be
-    # enforced is that nobody edits one without editing the others, which
-    # this check does at build time rather than leaving it to be noticed by
-    # eye.
+    # Three copies of the default accent: the CSS default baked into every
+    # page, accentPresets[0] in settings, and weglet-profile's
+    # DEFAULT_ACCENT. They cannot collapse into one -- the CSS is compiled
+    # into every page regardless of profile, and the Rust constant is what
+    # a fresh profile is created with -- so this checks nobody edits one
+    # without the others.
     accent_solid = tokens.get("color", {}).get("accent-solid")
     presets = tokens.get("accentPresets") or []
     if accent_solid and presets and accent_solid.lower() != presets[0].lower():

@@ -1,32 +1,23 @@
 // Copyright 2026 Weglet - Licensed under Apache 2.0
 //
-// rust/weglet-ffi/src/string.rs
-//
 // Strings across the boundary. Rust allocates, Rust frees.
 
 use std::ffi::{c_char, CStr, CString};
 
 // Hands a string to C++. Never returns null: a caller that has to check
-// for null on every string is a caller that will forget once.
-//
-// An interior NUL cannot survive a C string, so it is stripped rather
-// than failing the call -- the only way one gets here is a page title, and
-// losing a byte of a title beats losing the title.
+// every string will forget once. An interior NUL is stripped rather than
+// failing the call -- the only source is a page title.
 pub fn into_c_string(value: String) -> *mut c_char {
     let cleaned: String = value.chars().filter(|c| *c != '\0').collect();
     match CString::new(cleaned) {
         Ok(string) => string.into_raw(),
-        // Unreachable: NULs were filtered above. Still handled, because
-        // "unreachable" plus unwrap is how a browser learns to crash.
+        // Unreachable: NULs were filtered above.
         Err(_) => CString::default().into_raw(),
     }
 }
 
-// Borrows a C string. None for null or invalid UTF-8.
-//
-// The lifetime is the caller's problem in the C sense and is tied to the
-// input pointer here -- nothing in this crate keeps one past the call it
-// arrived in.
+// Borrows a C string. None for null or invalid UTF-8. Nothing in this
+// crate keeps one past the call it arrived in.
 //
 /// # Safety
 ///
@@ -42,8 +33,8 @@ pub unsafe fn str_from_c<'a>(value: *const c_char) -> Option<&'a str> {
 }
 
 // Frees a string that came from this library. C++ must not use free() or
-// delete on it: it was allocated by Rust's allocator, and on Windows that
-// is a different heap from the one the C++ side uses.
+// delete: it was allocated by Rust's allocator, which on Windows is a
+// different heap.
 //
 /// # Safety
 ///
@@ -84,8 +75,7 @@ mod tests {
         assert_eq!(round_trip("\u{1F600}"), "\u{1F600}");
     }
 
-    // A page can put a NUL in its title. Truncating at it would be a
-    // silent way to lose the rest.
+    // A page can put a NUL in its title.
     #[test]
     fn an_interior_nul_is_stripped_not_fatal() {
         assert_eq!(round_trip("a\0b"), "ab");
