@@ -127,6 +127,7 @@ bool WegletStateService::Affects(uint32_t changes, contract::PageKind kind) {
       return (changes & kFindResult) != 0;
     case contract::PageKind::kPermissionPrompt:
     case contract::PageKind::kSiteInfo:
+    case contract::PageKind::kToast:
       return false;
     case contract::PageKind::kHistory:
       return (changes & kHistory) != 0;
@@ -190,6 +191,18 @@ void WegletStateService::SetPendingPermissionPrompt(content::WebContents* conten
 
 void WegletStateService::ClearPendingPermissionPrompt(content::WebContents* contents) {
   pending_permission_prompts_.erase(contents);
+}
+
+void WegletStateService::SetPendingToasts(content::WebContents* contents,
+                                          std::vector<PendingToast> toasts) {
+  if (!contents) {
+    return;
+  }
+  pending_toasts_[contents] = std::move(toasts);
+}
+
+void WegletStateService::ClearPendingToasts(content::WebContents* contents) {
+  pending_toasts_.erase(contents);
 }
 
 std::optional<base::DictValue> WegletStateService::BuildFor(
@@ -401,6 +414,22 @@ std::optional<base::DictValue> WegletStateService::BuildFor(
       }
       base::DictValue state;
       state.Set("entries", base::Value(std::move(entries)));
+      return state;
+    }
+    case contract::PageKind::kToast: {
+      auto found = pending_toasts_.find(contents);
+      if (found == pending_toasts_.end()) {
+        return std::nullopt;
+      }
+      base::ListValue items;
+      for (const PendingToast& toast : found->second) {
+        base::DictValue item_value;
+        item_value.Set("id", toast.id);
+        item_value.Set("key", toast.key);
+        items.Append(base::Value(std::move(item_value)));
+      }
+      base::DictValue state;
+      state.Set("items", base::Value(std::move(items)));
       return state;
     }
     case contract::PageKind::kOther:

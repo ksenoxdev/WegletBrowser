@@ -153,6 +153,20 @@ export interface ContextMenuState {
   readonly addressBarShape: AddressBarShape;
 }
 
+export interface ToastItem {
+  readonly id: number;
+  // An i18n key ("toast.linkCopied"), not display text -- resolved by
+  // toast.ts against its own language, like every other page's strings.
+  readonly key: string;
+}
+
+export interface ToastState {
+  readonly items: readonly ToastItem[];
+  readonly language: Language;
+  readonly accentColor: string;
+  readonly addressBarShape: AddressBarShape;
+}
+
 export interface FindBarState {
   readonly query: string;
   readonly matchCount: number;
@@ -573,6 +587,45 @@ function parseContextMenu(value: unknown): ContextMenuState | null {
       enabled: item.enabled,
       ...(item.label !== undefined ? { label: item.label } : {}),
     });
+  }
+  return {
+    items,
+    language: parseLanguage(value),
+    accentColor: parsePushedAccentColor(value),
+    addressBarShape: parsePushedAddressBarShape(value),
+  };
+}
+
+export function onToast(handler: (state: ToastState) => void): void {
+  install(pushes.toast, (value: unknown) => {
+    const parsed = parseToast(value);
+    if (parsed) {
+      handler(parsed);
+    }
+  });
+  send("requestState");
+}
+
+function parseToast(value: unknown): ToastState | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+  const state = value as { items?: unknown };
+  if (!Array.isArray(state.items)) {
+    console.warn("weglet: malformed toast state", value);
+    return null;
+  }
+  const items: ToastItem[] = [];
+  for (const entry of state.items) {
+    if (typeof entry !== "object" || entry === null) {
+      return null;
+    }
+    const item = entry as Record<string, unknown>;
+    if (typeof item.id !== "number" || typeof item.key !== "string") {
+      console.warn("weglet: malformed toast item", entry);
+      return null;
+    }
+    items.push({ id: item.id, key: item.key });
   }
   return {
     items,

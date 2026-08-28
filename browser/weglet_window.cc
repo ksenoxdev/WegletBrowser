@@ -65,6 +65,7 @@
 #include "weglet/browser/weglet_shortcut_popup.h"
 #include "weglet/browser/weglet_state_service.h"
 #include "weglet/browser/weglet_tab_observer.h"
+#include "weglet/browser/weglet_toast_popup.h"
 #include "weglet/common/weglet_host.h"
 #include "weglet/ui/generated_contract.h"
 #include "weglet/ui/weglet_tokens.h"
@@ -178,6 +179,7 @@ WegletWindow::~WegletWindow() {
   find_bar_.reset();
   permission_prompt_.reset();
   site_info_popup_.reset();
+  toast_popup_.reset();
 
   // The WebViews hold bare pointers to their contents. Detach while the
   // views are alive, drop the widget, then drop the contents.
@@ -835,6 +837,32 @@ void WegletWindow::ToggleSiteInfo(int anchor_right, int anchor_bottom) {
 void WegletWindow::HideSiteInfo() {
   if (site_info_popup_) {
     site_info_popup_->Hide();
+  }
+}
+
+void WegletWindow::ShowToast(const std::string& text_key) {
+  constexpr size_t kMaxToasts = 2;
+  toasts_.push_back({next_toast_id_++, text_key});
+  if (toasts_.size() > kMaxToasts) {
+    toasts_.erase(toasts_.begin());
+  }
+  if (!toast_popup_) {
+    toast_popup_ = std::make_unique<WegletToastPopup>(this, state_service_);
+  }
+  toast_popup_->Show(toasts_);
+}
+
+void WegletWindow::DismissToast(int id) {
+  std::erase_if(toasts_, [id](const WegletStateService::PendingToast& toast) {
+    return toast.id == id;
+  });
+  if (!toast_popup_) {
+    return;
+  }
+  if (toasts_.empty()) {
+    toast_popup_->Hide();
+  } else {
+    toast_popup_->Show(toasts_);
   }
 }
 

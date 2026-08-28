@@ -101,6 +101,11 @@ siteInfo.microphone=Microphone
 siteInfo.location=Location
 siteInfo.notifications=Notifications
 
+toast.linkCopied=Link copied
+toast.bookmarkAdded=Added to bookmarks
+toast.bookmarkRemoved=Removed from bookmarks
+toast.dismiss=Dismiss
+
 history.title=History
 history.done=Done
 history.searchTab=Search history

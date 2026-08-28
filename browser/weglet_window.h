@@ -25,6 +25,7 @@
 #include "ui/views/controls/webview/unhandled_keyboard_event_handler.h"
 #include "ui/views/widget/widget_delegate.h"
 #include "url/gurl.h"
+#include "weglet/browser/weglet_state_service.h"
 
 namespace content {
 class BrowserContext;
@@ -53,6 +54,7 @@ class WegletShortcutPopup;
 class WegletSiteInfoPopup;
 class WegletStateService;
 class WegletTabObserver;
+class WegletToastPopup;
 
 // One browser window: a toolbar above, the active tab's page below. The
 // toolbar is a WebContents showing chrome://weglet/toolbar.html, not
@@ -164,6 +166,12 @@ class WegletWindow : public views::WidgetDelegate,
   // dropdown.
   void ToggleSiteInfo(int anchor_right, int anchor_bottom);
   void HideSiteInfo();
+
+  // A brief notice under the address bar -- link copied, bookmark
+  // added/removed. `text_key` is an i18n key, resolved by toast.ts.
+  void ShowToast(const std::string& text_key);
+  // The toast's own close button, or its 5s on-page timer -- see toast.ts.
+  void DismissToast(int id);
   void SetPermissionDecision(const std::string& id, bool allow);
 
   // Gives `contents` a channel to this window, same as every tab and the
@@ -313,6 +321,11 @@ class WegletWindow : public views::WidgetDelegate,
   std::unique_ptr<WegletFindBar> find_bar_;
   std::unique_ptr<WegletPermissionPrompt> permission_prompt_;
   std::unique_ptr<WegletSiteInfoPopup> site_info_popup_;
+  std::unique_ptr<WegletToastPopup> toast_popup_;
+
+  // Oldest first, capped at kMaxToasts by ShowToast.
+  std::vector<WegletStateService::PendingToast> toasts_;
+  int next_toast_id_ = 1;
 
   views::UnhandledKeyboardEventHandler unhandled_keyboard_event_handler_;
 

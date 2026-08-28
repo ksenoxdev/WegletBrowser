@@ -95,6 +95,11 @@ siteInfo.microphone=Микрофон
 siteInfo.location=Местоположение
 siteInfo.notifications=Уведомления
 
+toast.linkCopied=Ссылка скопирована
+toast.bookmarkAdded=Добавлено в закладки
+toast.bookmarkRemoved=Удалено из закладок
+toast.dismiss=Закрыть
+
 history.title=История
 history.done=Готово
 history.searchTab=История поиска

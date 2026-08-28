@@ -389,6 +389,10 @@ void WegletMessageHandler::Dispatch(std::string_view name,
     window_->HideSiteInfo();
   } else if (name == "setPermissionDecision") {
     window_->SetPermissionDecision(StringAt(args, 0), BoolAt(args, 1));
+  } else if (name == "showToast") {
+    window_->ShowToast(StringAt(args, 0));
+  } else if (name == "dismissToast") {
+    window_->DismissToast(static_cast<int>(IndexAt(args, 0)));
   } else {
     // Reachable only if contract.json gained a message marked implemented
     // with nothing added here. The page will look like it did nothing.

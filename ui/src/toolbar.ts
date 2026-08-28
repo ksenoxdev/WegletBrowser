@@ -24,8 +24,6 @@ import { channels, tokens } from "./tokens.js";
 const {
   textDim: TEXT_DIM,
   text: TEXT,
-  surfaceRaised: SURFACE_RAISED,
-  border: BORDER,
   borderStrong: BORDER_STRONG,
   danger: DANGER,
   background: BACKGROUND,
@@ -195,9 +193,7 @@ function renderWindowButtons(now: number): void {
 // Tabs
 // ---------------------------------------------------------------------
 
-const tabStrip = new Strip(1.02, false);
 let tabElements: HTMLElement[] = [];
-let activeIndex = -1;
 
 // ---------------------------------------------------------------------
 // Tab drag-to-reorder
@@ -348,7 +344,7 @@ function tabPill(
   pill.setAttribute("role", "tab");
   pill.setAttribute("aria-selected", String(active));
   pill.tabIndex = 0;
-  attachTooltip(pill, tab.url || tab.label);
+  pill.style.height = `${tokens.layoutTabHeight}px`;
 
   pill.addEventListener("click", () => {
     if (suppressNextClick) {
@@ -364,15 +360,6 @@ function tabPill(
       send("activateTab", tab.id);
     }
   });
-  pill.addEventListener("pointerenter", () => {
-    tabStrip.hover(index);
-    scheduleFrame();
-  });
-  pill.addEventListener("pointerleave", () => {
-    tabStrip.hover(null);
-    scheduleFrame();
-  });
-
   // A press only becomes a drag once it has moved a few pixels; short of
   // that it's a click. setPointerCapture below routes pointermove/up here
   // regardless of what's visually underneath.
@@ -423,34 +410,6 @@ function tabPill(
   return pill;
 }
 
-function renderTabs(now: number): void {
-  tabElements.forEach((pill, index) => {
-    // A dragged or shifted pill owns its own transform; the per-frame heat
-    // animation must not fight it for the same style property.
-    if (drag && (index === drag.startIndex || pill.classList.contains("drag-shifting"))) {
-      return;
-    }
-    const presentation = tabStrip.presentation(index, now);
-    // A tab grows into place rather than popping in at full size.
-    pill.style.height = `${tokens.layoutTabHeight * (0.55 + 0.45 * presentation.arrival)}px`;
-    pill.style.transform = `scale(${presentation.scale})`;
-
-    if (index === activeIndex) {
-      // The active pill's own CSS carries its look; inline values would
-      // outrank it and a stale hover tint would survive selection.
-      pill.style.backgroundColor = "";
-      pill.style.borderColor = "";
-      pill.style.color = "";
-      return;
-    }
-    // Damped to 45%: a hovered inactive tab should hint, not compete with
-    // the selected one.
-    pill.style.backgroundColor = rgba(SURFACE_RAISED, presentation.heat * 0.45);
-    pill.style.borderColor = rgba(BORDER, presentation.heat);
-    pill.style.color = textAt(presentation.heat);
-  });
-}
-
 // ---------------------------------------------------------------------
 
 function isEditingAddress(): boolean {
@@ -466,16 +425,14 @@ function render(state: BrowserState): void {
   const strip = byId("tabstrip");
   const newTab = byId("new-tab");
 
-  // Rebuilt rather than diffed -- at most a hundred pills, and heat
-  // carried in the Strip survives a rebuild by index, so this doesn't
-  // flicker. Skipped mid-drag so a push doesn't yank the DOM out from
-  // under the pointer; the strip catches up once the drag ends.
+  // Rebuilt rather than diffed -- at most a hundred pills. Skipped
+  // mid-drag so a push doesn't yank the DOM out from under the pointer;
+  // the strip catches up once the drag ends.
   if (!drag) {
     for (const old of strip.querySelectorAll(".tab-pill")) {
       old.remove();
     }
     tabElements = [];
-    activeIndex = state.tabs.findIndex((tab) => tab.id === state.activeId);
 
     state.tabs.forEach((tab, index) => {
       const pill = tabPill(tab, index, tab.id === state.activeId, state.faviconsEnabled);
@@ -527,7 +484,11 @@ navButton(
   "bookmark-toggle",
   "bookmark",
   "toolbar.bookmark",
-  () => send("toggleBookmark"),
+  () => {
+    const wasBookmarked = byId("bookmark-toggle").classList.contains("bookmarked");
+    send("toggleBookmark");
+    send("showToast", wasBookmarked ? "toast.bookmarkRemoved" : "toast.bookmarkAdded");
+  },
   undefined,
   false,
 );
@@ -541,6 +502,7 @@ navButton("copy-url", "link", "toolbar.copyUrl", () => {
   const url = byId<HTMLInputElement>("address-bar").value;
   if (url) {
     void navigator.clipboard.writeText(url);
+    send("showToast", "toast.linkCopied");
   }
 });
 navButton("keep", "plus", "toolbar.keep", () => {
@@ -563,9 +525,8 @@ function main(): void {
   const newTab = byId("new-tab");
   setIcon(newTab, "plus");
   attachTooltip(newTab, () => t("toolbar.newTab", currentLanguage));
-  newTab.addEventListener("click", (event) => {
+  newTab.addEventListener("click", () => {
     send("newTab");
-    spawnRipple(newTab, event.clientX, event.clientY);
   });
 
   windowButton("win-minimize", "minus", false, () => send("minimizeWindow"));
@@ -592,7 +553,6 @@ function main(): void {
 
   register(buttonStrip, () => buttons.length, renderButtons);
   register(windowStrip, () => windowButtons.length, renderWindowButtons);
-  register(tabStrip, () => tabElements.length, renderTabs);
 
   onState(render);
 }

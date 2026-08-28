@@ -1,0 +1,76 @@
+/* Copyright 2026 Weglet - Licensed under Apache 2.0
+ *
+ * A small floating popup -- see find_bar.css, which this mirrors. Its
+ * whole window is exactly this card, so there is no outer scroll region.
+ */
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--color-surface-raised);
+}
+
+body {
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-menu);
+  box-sizing: border-box;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  color: var(--color-text);
+  font-family: "Instrument Sans", sans-serif;
+  padding: 4px;
+}
+
+#toast-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.toast-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  font-size: var(--font-size-sm);
+  /* Entrance and exit both animate through this starting state -- see
+     toast.ts, which adds/removes "shown" a frame apart from creation
+     and dismissal so the transition actually has something to play. */
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.toast-item.shown {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.toast-item + .toast-item {
+  border-top: 1px solid var(--color-border);
+}
+
+.toast-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toast-close {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-menu-item);
+  color: var(--color-text-dim);
+  cursor: pointer;
+}
+
+.toast-close:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}

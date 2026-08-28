@@ -96,6 +96,8 @@ source_set("weglet_lib") {
     "browser/weglet_state_service.h",
     "browser/weglet_tab_observer.cc",
     "browser/weglet_tab_observer.h",
+    "browser/weglet_toast_popup.cc",
+    "browser/weglet_toast_popup.h",
     "browser/weglet_web_ui_controller_factory.cc",
     "browser/weglet_web_ui_controller_factory.h",
     "browser/weglet_web_ui_data_source.cc",

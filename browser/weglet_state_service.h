@@ -171,6 +171,16 @@ class WegletStateService : public base::SupportsUserData::Data {
                                   PendingPermissionPrompt prompt);
   void ClearPendingPermissionPrompt(content::WebContents* contents);
 
+  // The toast popup's own pending state: up to WegletWindow's own cap
+  // (2) of {id, i18n key} pairs, oldest first. Same reasoning as
+  // PendingShortcut.
+  struct PendingToast {
+    int id = 0;
+    std::string key;
+  };
+  void SetPendingToasts(content::WebContents* contents, std::vector<PendingToast> toasts);
+  void ClearPendingToasts(content::WebContents* contents);
+
  private:
   struct Entry {
     // Owned by the WebContents. Removed in RemovePage before it goes.
@@ -200,6 +210,7 @@ class WegletStateService : public base::SupportsUserData::Data {
       pending_context_menus_;
   std::map<content::WebContents*, PendingFindResult> pending_find_results_;
   std::map<content::WebContents*, PendingPermissionPrompt> pending_permission_prompts_;
+  std::map<content::WebContents*, std::vector<PendingToast>> pending_toasts_;
 
   const raw_ptr<WegletBridge> bridge_;
   const raw_ptr<WegletSecurityGuard> guard_;

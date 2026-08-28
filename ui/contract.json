@@ -20,7 +20,8 @@
     "context-menu": "context_menu.html",
     "find-bar": "find_bar.html",
     "permission-prompt": "permission_prompt.html",
-    "site-info": "site_info.html"
+    "site-info": "site_info.html",
+    "toast": "toast.html"
   },
   "$messages_comment": [
     "args is what the page sends, in order, in TypeScript types; C++",
@@ -333,6 +334,20 @@
         "boolean"
       ],
       "implemented": true
+    },
+    {
+      "name": "showToast",
+      "args": [
+        "string"
+      ],
+      "implemented": true
+    },
+    {
+      "name": "dismissToast",
+      "args": [
+        "number"
+      ],
+      "implemented": true
     }
   ],
   "$pushes_comment": [
@@ -393,6 +408,10 @@
     "siteInfo": {
       "page": "site-info",
       "function": "setSiteInfo"
+    },
+    "toast": {
+      "page": "toast",
+      "function": "setToast"
     }
   },
   "internal_addresses": {
