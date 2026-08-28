@@ -52,6 +52,21 @@ def main() -> int:
             if result.returncode != 0:
                 return result.returncode
 
+        # generated_i18n.ts, same reasoning as tokens.ts/contract.ts above --
+        # i18n.ts's import doesn't resolve without it.
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(UI_DIR, "generate_i18n.py"),
+                "--i18n-dir",
+                os.path.join(UI_DIR, "i18n"),
+                "--ts",
+                os.path.join(UI_DIR, "src", "generated_i18n.ts"),
+            ]
+        )
+        if result.returncode != 0:
+            return result.returncode
+
         # Its own tsconfig: the tests are not part of what ships, and the
         # shipped one covers only src/.
         config = os.path.join(out, "tsconfig.json")
