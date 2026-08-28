@@ -313,7 +313,7 @@ fn a_rejected_setting_does_not_mark_anything_dirty() {
 
 #[test]
 fn language_round_trips_through_flush() {
-    let f = guard("language");
+    let _f = guard("language");
     let state = abi::state_new();
 
     assert_eq!(take(unsafe { abi::language(state) }), "en");

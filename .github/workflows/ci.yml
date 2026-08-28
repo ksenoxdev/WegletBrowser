@@ -61,9 +61,13 @@ jobs:
           mkdir -p fake-chromium/third_party/node/linux/node-linux-x64/bin
           ln -s "$(command -v node)" fake-chromium/third_party/node/linux/node-linux-x64/bin/node
           npm install --global typescript
-          mkdir -p fake-chromium/third_party/node/node_modules/typescript/lib
-          cp "$(npm root -g)/typescript/lib/tsc.js" \
-             fake-chromium/third_party/node/node_modules/typescript/lib/tsc.js
+          mkdir -p fake-chromium/third_party/node/node_modules
+          # The whole package, not just lib/tsc.js: newer TypeScript
+          # versions have tsc.js import from its own package.json (the
+          # "#getExePath" subpath import), which only resolves when that
+          # package.json is there alongside it.
+          cp -r "$(npm root -g)/typescript" \
+             fake-chromium/third_party/node/node_modules/typescript
 
       - run: python3 ui/run_ui_tests.py --chromium-root fake-chromium
 
